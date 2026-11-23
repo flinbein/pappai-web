@@ -9,11 +9,8 @@ export default defineConfig(({ command }) => ({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/auth/': 'http://localhost:3000',
-      '/session': 'http://localhost:3000',
-      '/rpc': 'http://localhost:3000',
-      '/files/': 'http://localhost:3000',
-      '/ws/': { target: 'ws://localhost:3000', ws: true },
+      '^/(auth/|session$|rpc$|files(?:/|$))': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      '/ws/': { target: 'ws://127.0.0.1:3000', changeOrigin: false, ws: true },
     },
   },
   build: {

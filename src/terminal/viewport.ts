@@ -24,6 +24,8 @@ export function bindViewport(root: HTMLElement, button: HTMLButtonElement, sessi
     if (vv && vv.scale === 1) {
       const bottom = vv.offsetTop + vv.height;
       edge = Math.min(edge, bottom);
+      // After either kind of fullscreen exit Chrome can restore its address bar
+      // before it restores the ordinary layout height.
       if (normalWindow && !document.fullscreenElement && !document.hidden) {
         if (normalWindow.width !== innerWidth) normalWindow = undefined;
         else edge = Math.min(edge, normalWindow.height - Math.max(0, innerHeight - bottom));
@@ -79,6 +81,8 @@ export function bindViewport(root: HTMLElement, button: HTMLButtonElement, sessi
     const active = document.activeElement;
     const touch = matchMedia('(pointer: coarse)').matches;
     const reopen = touch && editor(active) && keyboardInset() > 60;
+    // Blurring the input can change Chrome's reported height before fullscreen starts.
+    const entryHeight = innerHeight;
     const before = generation;
     const interrupted = () => signal.aborted || before !== generation || document.hidden;
     button.disabled = true;
@@ -91,10 +95,9 @@ export function bindViewport(root: HTMLElement, button: HTMLButtonElement, sessi
       if (interrupted()) return;
       if (document.fullscreenElement === root) {
         await document.exitFullscreen();
-        if (!interrupted()) normalWindow = undefined;
       } else {
         if (touch) {
-          normalWindow = {width: innerWidth, height: Math.min(innerHeight,
+          normalWindow = {width: innerWidth, height: Math.min(innerHeight, entryHeight,
             normalWindow?.width === innerWidth ? normalWindow.height : Infinity)};
         }
         await root.requestFullscreen({navigationUI: 'hide'});

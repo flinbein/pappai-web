@@ -4,7 +4,7 @@ import '@xterm/xterm/css/xterm.css';
 import './terminal.css';
 import {bindBell} from './bell';
 import {CopyDialog, PasteField, useTerminalClipboard} from './clipboard';
-import {noModifiers} from './keys';
+import {functionKeys, noModifiers} from './keys';
 import {defaultFontSize, openTerminal, type TerminalSession} from './session';
 import {bindArrows, bindButtonHints, bindToolbarShortcut} from './toolbar';
 import {bindTerminalTouch} from './touch';
@@ -46,7 +46,7 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   const [status, setStatus] = useState('Подключение…');
   const [modifiers, setModifiers] = useState(noModifiers);
   const [toolsVisible, setToolsVisible] = useState(false);
-  const [toolsMenu, setToolsMenu] = useState(false);
+  const [menu, setMenu] = useState<'input' | 'tools' | 'function'>('input');
   const statusListener = useRef(onStatus);
   useLayoutEffect(() => { statusListener.current = onStatus; }, [onStatus]);
   const report = useCallback((text: string, anchor?: HTMLElement) => {
@@ -149,9 +149,9 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   function stepFont(step: number) {
     if (session.current) font(session.current.term.options.fontSize! + step);
   }
-  function switchMenu(tools: boolean) {
+  function switchMenu(next: typeof menu) {
     if (notice.current) notice.current.textContent = '';
-    setToolsMenu(tools);
+    setMenu(next);
   }
   const online = connection === 'online';
   const closed = connection === 'closed';
@@ -171,22 +171,30 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
       <div ref={toolbar} className="terminal-toolbar" hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
         onPointerDown={event => { if (event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
         <span ref={notice} className="terminal-hint" role="status"/>
-        <div className="terminal-keys" hidden={nativePaste || toolsMenu} aria-label="Input keys">
+        <div className="terminal-keys" hidden={nativePaste || menu !== 'input'} aria-label="Input keys">
           <button disabled={!online} data-key="Escape" data-hint="Send Escape." onClick={() => keyPress('Escape')}>Esc</button>
           <button disabled={!online} id="tab" data-hint="Send Tab. Use Shift for reverse Tab." onClick={event => keyPress('Tab', event.shiftKey)}>Tab</button>
           <button disabled={!online} id="arrow-pad" aria-label="Arrow keys: drag in any direction">✥</button>
           {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} id={name} disabled={!online} aria-pressed={modifiers[name]}
             aria-label={name} data-hint={'Keep ' + name + ' on for toolbar keys. Typing releases it.'}
             onClick={() => { session.current?.modifier(name); session.current?.term.focus(); }}>{name === 'ctrl' ? 'Ctrl' : name === 'alt' ? 'Alt' : '⇧'}</button>)}
-          <button className="terminal-menu-switch" id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu(true)}>☰</button>
+          <button disabled={!online} data-hint="Show function keys F1–F12." onClick={() => switchMenu('function')}>Fn</button>
+          <button className="terminal-menu-switch" id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu('tools')}>☰</button>
         </div>
-        <div className="terminal-keys" hidden={nativePaste || !toolsMenu} aria-label="Terminal tools">
+        {menu === 'function' && !nativePaste && <div className="terminal-function-row" role="group" aria-label="Function keys">
+          <div className="terminal-keys">
+            {functionKeys.map(name => <button key={name} disabled={!online} data-hint={'Send ' + name + '.'}
+              onClick={() => { keyPress(name); switchMenu('input'); }}>{name}</button>)}
+          </div>
+          <button aria-label="Back to input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>↩</button>
+        </div>}
+        <div className="terminal-keys" hidden={nativePaste || menu !== 'tools'} aria-label="Terminal tools">
           <button id="copy" data-hint="Copy selected text or choose from scrollback." onClick={copy}>Copy</button>
           <button id="paste" disabled={!online} data-hint="Paste text from the clipboard." onClick={paste}>Paste</button>
           <button id="font-up" aria-label="Increase font size" data-hint="Increase the font size." onClick={() => stepFont(1)}>A+</button>
           <button id="font-down" aria-label="Decrease font size" data-hint="Decrease the font size." onClick={() => stepFont(-1)}>A−</button>
           <button id="fullscreen" hidden={!document.fullscreenEnabled} aria-label="Enter fullscreen" data-hint="">⛶</button>
-          <button className="terminal-menu-switch" id="terminal-input" aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu(false)}>⌨</button>
+          <button className="terminal-menu-switch" id="terminal-input" aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>⌨</button>
         </div>
         {visible && nativePaste && online && <PasteField dismiss={dismissPaste} send={text => {
           if (session.current?.online()) session.current.paste(text);

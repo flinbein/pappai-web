@@ -3,6 +3,12 @@ const cursorKeys = new Map(Object.entries({
   ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F',
 }));
 
+const functionCodes = new Map(Object.entries({
+  F1: 'P', F2: 'Q', F3: 'R', F4: 'S', F5: '15', F6: '17',
+  F7: '18', F8: '19', F9: '20', F10: '21', F11: '23', F12: '24',
+}));
+export const functionKeys = [...functionCodes.keys()];
+
 export interface Modifiers {
   ctrl: boolean;
   alt: boolean;
@@ -12,12 +18,17 @@ export interface Modifiers {
 export const noModifiers: Modifiers = {ctrl: false, alt: false, shift: false};
 
 export function isSpecialKey(key: string) {
-  return cursorKeys.has(key) || ['Escape', 'Tab', 'PageUp', 'PageDown'].includes(key);
+  return cursorKeys.has(key) || functionCodes.has(key) || ['Escape', 'Tab', 'PageUp', 'PageDown'].includes(key);
 }
 
 export function encodeKey(key: string, {ctrl, alt, shift: latchedShift}: Modifiers, applicationCursor: boolean, special: boolean, shift = false) {
   shift ||= latchedShift;
   const modifier = 1 + Number(shift) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
+  const fn = special && functionCodes.get(key);
+  if (fn) {
+    if (fn.length === 1) return escape + (modifier === 1 ? 'O' : '[1;' + modifier) + fn;
+    return escape + '[' + fn + (modifier === 1 ? '' : ';' + modifier) + '~';
+  }
   const suffix = special && cursorKeys.get(key);
   if (suffix) {
     const prefix = modifier !== 1 ? '[1;' + modifier : applicationCursor ? 'O' : '[';

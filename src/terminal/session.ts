@@ -54,7 +54,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
     events.modifiers(next);
   }
   function clearModifiers() {
-    if (modifiers.ctrl || modifiers.alt) setModifiers(noModifiers);
+    if (modifiers.ctrl || modifiers.alt || modifiers.shift) setModifiers(noModifiers);
   }
   function key(value: string, special = true, shift = false) {
     const data = encodeKey(value, modifiers, term.modes.applicationCursorKeysMode, special, shift);
@@ -63,7 +63,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
   }
   term.onData(data => {
     // A mobile IME can commit a letter without a keydown. Keep terminal replies intact.
-    if ((modifiers.ctrl || modifiers.alt) && data && !data.startsWith(escape)) key(data, false);
+    if ((modifiers.ctrl || modifiers.alt || modifiers.shift) && data && !data.startsWith(escape)) key(data, false);
     else send(encoder.encode(data));
   });
   term.onBinary(data => send(Uint8Array.from(data, ch => ch.charCodeAt(0))));
@@ -76,7 +76,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
       else if (online()) events.paste();
       return false;
     }
-    if ((modifiers.ctrl || modifiers.alt) && isSpecialKey(event.key)) {
+    if ((modifiers.ctrl || modifiers.alt || modifiers.shift) && isSpecialKey(event.key)) {
       event.preventDefault();
       key(event.key, true, event.shiftKey);
       return false;

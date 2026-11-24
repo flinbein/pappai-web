@@ -40,65 +40,44 @@ function bindPress<T extends Point>(button: GestureButton, signal: AbortSignal, 
 }
 const point = (event: PointerEvent) => ({id: event.pointerId, x: event.clientX, y: event.clientY});
 
-export function bindVerticalKey(button: GestureButton, signal: AbortSignal, actions: {
-  up(): void; down?(): void; tap(shift: boolean): void; upLabel?: string; threshold?: number;
-}) {
-  type Action = 'tap' | 'up' | 'down' | 'scroll';
-  bindPress(button, signal, {
-    start: event => ({...point(event), shift: event.shiftKey, action: 'tap' as Action}),
-    move(press, event) {
-      if (press.action !== 'tap') return;
-      const dx = Math.abs(event.clientX - press.x);
-      const dy = event.clientY - press.y;
-      if (Math.max(dx, Math.abs(dy)) < (actions.threshold ?? 16)) return;
-      press.action = dx >= Math.abs(dy) ? 'scroll' : dy < 0 ? 'up' : 'down';
-      if (press.action === 'up' && actions.upLabel) button.textContent = actions.upLabel;
-    },
-    finish({action, shift}, event) {
-      if (action === 'tap') actions.tap(shift || event.shiftKey);
-      if (action === 'up') actions.up();
-      if (action === 'down') actions.down?.();
-    },
-  });
-  button.addEventListener('click', event => { if (event.detail === 0) actions.tap(event.shiftKey); }, {signal});
-}
-
-export function bindFontKey(button: GestureButton, signal: AbortSignal, getSize: () => number,
-  setSize: (size: number) => void, defaultSize: number, report: Hint) {
+// Keep ordinary button clicks native, including keyboard activation and clipboard permission.
+export function bindButtonHints(toolbar: HTMLElement, report: Hint, signal: AbortSignal) {
+  let press: (Point & {button: HTMLButtonElement}) | undefined;
+  let suppressed: HTMLButtonElement | undefined;
   let timer: number | undefined;
-  const hint = () => report('Drag up for larger text or down for smaller text. Hold to reset.', button);
-  bindPress(button, signal, {
-    start(event) {
-      const press = {...point(event), mode: 'tap', size: getSize()};
-      button.textContent = String(press.size);
-      timer = window.setTimeout(() => {
-        press.mode = 'reset';
-        setSize(defaultSize);
-        button.textContent = String(getSize());
-      }, 550);
-      return press;
-    },
-    move(press, event) {
-      const dx = Math.abs(event.clientX - press.x);
-      const dy = press.y - event.clientY;
-      if (press.mode === 'tap' && Math.max(dx, Math.abs(dy)) >= 10) {
-        clearTimeout(timer);
-        press.mode = Math.abs(dy) > dx ? 'resize' : 'scroll';
-      }
-      if (press.mode === 'resize') {
-        setSize(press.size + Math.trunc(dy / 10));
-        button.textContent = String(getSize());
-      }
-    },
-    finish(press) { if (press.mode === 'tap') hint(); },
-    cancel: () => clearTimeout(timer),
-  });
-  button.addEventListener('click', event => { if (event.detail === 0) hint(); }, {signal});
-  button.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-    event.preventDefault();
-    setSize(getSize() + (event.key === 'ArrowUp' ? 1 : -1));
+  function cancel() {
+    clearTimeout(timer);
+    press = undefined;
+  }
+  toolbar.addEventListener('pointerdown', event => {
+    cancel();
+    suppressed = undefined;
+    const button = event.target instanceof Element ? event.target.closest('button[data-hint]') : null;
+    if (!(button instanceof HTMLButtonElement) || !event.isPrimary || event.button !== 0 || button.disabled) return;
+    press = {...point(event), button};
+    timer = window.setTimeout(() => {
+      suppressed = button;
+      report(button.dataset.hint || button.getAttribute('aria-label') || '', button);
+    }, 550);
   }, {signal});
+  toolbar.addEventListener('pointermove', event => {
+    if (press && press.id === event.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) {
+      suppressed = press.button;
+      cancel();
+    }
+  }, {signal});
+  window.addEventListener('pointerup', cancel, {signal});
+  window.addEventListener('pointercancel', cancel, {signal});
+  window.addEventListener('blur', cancel, {signal});
+  toolbar.addEventListener('contextmenu', event => event.preventDefault(), {signal});
+  toolbar.addEventListener('click', event => {
+    if (event.detail && suppressed?.contains(event.target as Node)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    suppressed = undefined;
+  }, {capture: true, signal});
+  signal.addEventListener('abort', cancel, {once: true});
 }
 
 const directions = {ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓'};
@@ -114,6 +93,7 @@ export function bindArrows(button: GestureButton, signal: AbortSignal, act: (key
         press.shift = true;
         press.tapped = false;
         button.textContent = '⇧';
+        hint();
       }, 550);
       return press;
     },

@@ -1,10 +1,12 @@
+.terminal-frame { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.terminal-frame[hidden] { display: none; }
 .terminal-view {
   position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
+  flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -16,7 +18,7 @@
 }
 .terminal-view:fullscreen { width: 100%; height: 100%; }
 .terminal-view[hidden], .terminal-view [hidden] { display: none !important; }
-.terminal-view button {
+.terminal-view button, .terminal-statusbar button {
   background: #293c40;
   color: inherit;
   border: 1px solid #455b5b;
@@ -40,7 +42,7 @@
   font-size: .8rem;
 }
 .terminal-state { min-width: 0; overflow-wrap: anywhere; }
-.terminal-view .terminal-statusbar button { flex: none; min-height: 1.55rem; font-size: .8rem; }
+.terminal-statusbar button { flex: none; min-height: 1.55rem; font-size: .8rem; }
 .terminal-screen {
   flex: 1;
   min-width: 0;
@@ -72,15 +74,12 @@
 }
 .terminal-view .terminal-keys button, .terminal-native-paste button { flex: none; white-space: nowrap; height: 36px; min-width: 44px; }
 .terminal-view .terminal-keys button[aria-pressed=true] { background: #b0e6d4; color: #13241f; }
-.terminal-keys :is(#arrow-pad, #tab, #clipboard, #font-pad) {
-  touch-action: pan-x;
-  user-select: none;
-  -webkit-touch-callout: none;
-  font-size: 20px;
-  line-height: 1;
+.terminal-keys button { user-select: none; -webkit-touch-callout: none; }
+.terminal-view .terminal-menu-switch { margin-inline-start: auto; }
+.terminal-keys #arrow-pad { touch-action: none; cursor: move; }
+@media (max-width: 24rem) {
+  .terminal-view .terminal-keys button { min-width: 36px; padding-inline: 5px; }
 }
-.terminal-keys #arrow-pad { width: 54px; touch-action: none; cursor: move; }
-.terminal-keys #font-pad { width: 54px; cursor: ns-resize; font-variant-numeric: tabular-nums; }
 .terminal-hint:not(:empty) {
   position: absolute;
   bottom: 100%;

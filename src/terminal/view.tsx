@@ -17,7 +17,6 @@ interface TerminalProps {
   visible: boolean;
   sandbox: boolean;
   connection: TerminalState;
-  status: string;
   update(id: number, change: TerminalUpdate): void;
 }
 
@@ -29,7 +28,7 @@ function savedFontSize() {
   return defaultFontSize;
 }
 
-export function TerminalView({id, command, visible, sandbox, connection, status, update}: TerminalProps) {
+export function TerminalView({id, command, visible, sandbox, connection, update}: TerminalProps) {
   const root = useRef<HTMLDivElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -85,14 +84,16 @@ export function TerminalView({id, command, visible, sandbox, connection, status,
 
   useLayoutEffect(() => {
     const current = openTerminal(host.current!, savedFontSize(), command, sandbox, {
-      started(sandboxed, program) {
+      started(program) {
         const name = program?.split('/').pop();
-        update(id, {state: 'online', detail: sandboxed ? 'В песочнице' : 'Без песочницы', ...(name && {program: name})});
+        update(id, {state: 'online', detail: 'working', ...(name && {program: name})});
         if (current.visible() && !matchMedia('(pointer: coarse)').matches) current.term.focus();
       },
       title(value) { update(id, {title: value.trim().slice(0, 256)}); },
-      closed(reason, launchFailed) {
-        update(id, {state: launchFailed ? 'failed' : 'closed', detail: reason});
+      closed(result) {
+        if ('error' in result) update(id, {state: 'failed', detail: result.error});
+        else if ('exitCode' in result) update(id, {state: result.exitCode === 0 ? 'closed' : 'nonzero', detail: 'exit code ' + result.exitCode});
+        else update(id, {state: 'closed', detail: 'disconnected'});
         setNativePaste(false);
       },
       modifiers: setModifiers, copy, paste,
@@ -117,16 +118,17 @@ export function TerminalView({id, command, visible, sandbox, connection, status,
       current!.key(value, true, shift);
       current!.term.focus();
     }
-    function toggleToolbar() {
-      const show = Boolean(keys.hidden);
+    function toggleToolbar(row: 'input' | 'tools') {
+      const show = Boolean(keys.hidden) || keys.dataset.menu !== row;
       flushSync(() => {
         setNativePaste(false);
+        switchMenu(row);
         setToolsVisible(show);
       });
       current!.resize();
     }
-    bindTerminalTouch(current.term, screen.current!, handles.current!, font, () => openKeyboard(current), toggleToolbar, signal);
-    bindToolbarShortcut(scope, toggleToolbar, signal);
+    bindTerminalTouch(current.term, screen.current!, handles.current!, font, () => openKeyboard(current), () => toggleToolbar('input'), signal);
+    bindToolbarShortcut(scope, () => toggleToolbar('tools'), signal);
     bindViewport(scope, button('fullscreen'), current, report, signal);
     bindBell(current.term, scope, signal);
     bindButtonHints(keys, report, signal);
@@ -174,9 +176,6 @@ export function TerminalView({id, command, visible, sandbox, connection, status,
   const control = (name: string) => ({id: visible ? name : undefined, 'data-control': name});
   return <div className="terminal-frame" hidden={!visible} id={'terminal-panel-' + id}
     role="tabpanel" aria-labelledby={'terminal-tab-' + id}>
-    <div className="terminal-statusbar">
-      <span className="terminal-state" data-state={connection} role="status" title="Double-tap Shift to toggle terminal keys">{status}</span>
-    </div>
     <div ref={root} className="terminal-view" tabIndex={-1} aria-label="Terminal">
       <div ref={screen} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
         <div ref={host} className="terminal-host"/>
@@ -184,7 +183,7 @@ export function TerminalView({id, command, visible, sandbox, connection, status,
       <div ref={handles} className="terminal-handles">
         <button hidden aria-label="Selection start"/><button hidden aria-label="Selection end"/>
       </div>
-      <div ref={toolbar} className="terminal-toolbar" hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
+      <div ref={toolbar} className="terminal-toolbar" data-menu={nativePaste ? 'paste' : menu} hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
         onPointerDown={event => { if (event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
         <span ref={notice} className="terminal-hint" role="status"/>
         <div className="terminal-key-row" role="group" hidden={nativePaste || menu !== 'input'} aria-label="Input keys">

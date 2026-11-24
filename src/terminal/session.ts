@@ -2,10 +2,11 @@ import {FitAddon} from '@xterm/addon-fit';
 import {Terminal} from '@xterm/xterm';
 import {encodeKey, escape, isSpecialKey, noModifiers, type Modifiers} from './keys';
 
+type TerminalEnd = {error: string} | {exitCode: number} | {disconnected: true};
 type SessionEvents = {
-  started(sandboxed: boolean, program?: string): void;
+  started(program?: string): void;
   title(value: string): void;
-  closed(reason: string, launchFailed: boolean): void;
+  closed(result: TerminalEnd): void;
   modifiers(value: Modifiers): void;
   copy(): void;
   paste(): void;
@@ -29,7 +30,6 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
   socket.binaryType = 'arraybuffer';
   const encoder = new TextEncoder();
   let modifiers = noModifiers;
-  let issue = '';
   let lastSize = '';
   let started = false;
   let finished = false;
@@ -103,14 +103,14 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
     lastSize = JSON.stringify(dimensions);
     socket.send(JSON.stringify({command, ...dimensions}));
   };
-  function finish(reason: string, launchFailed = false) {
+  function finish(result: TerminalEnd) {
     if (finished) return;
     finished = true;
     term.options.disableStdin = true;
     term.options.cursorBlink = false;
     term.write('\x1b[?25l'); // Hide the cursor after the last queued PTY output.
     clearModifiers();
-    events.closed(reason, launchFailed);
+    events.closed(result);
   }
   socket.onmessage = ({data}: MessageEvent<unknown>) => {
     if (data instanceof ArrayBuffer) {
@@ -120,22 +120,17 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
     } else if (typeof data === 'string') {
       const info = JSON.parse(data);
       if (info.startFailed === true && !started) {
-        finish(info.error || 'Не удалось запустить терминал', true);
+        finish({error: info.error || 'Не удалось запустить терминал'});
       } else if (info.started === true && !started && !finished) {
         started = true;
         resize();
-        events.started(info.sandboxed === true, info.program);
+        events.started(info.program);
       } else if (typeof info.exitCode === 'number') {
-        finish('Сеанс завершён · код ' + info.exitCode);
-      } else if (typeof info.error === 'string') {
-        issue = info.error;
+        finish({exitCode: info.exitCode});
       }
     }
   };
-  socket.onclose = event => {
-    const lost = started ? 'Соединение потеряно' : 'Соединение недоступно. Проверьте вход в панель.';
-    finish(issue || (event.code === 1000 && started ? 'Сеанс завершён' : lost));
-  };
+  socket.onclose = () => finish({disconnected: true});
   function close() {
     socket.close();
   }

@@ -1,7 +1,7 @@
 import {useCallback, useLayoutEffect, useRef, useState} from 'react';
 import {TerminalView} from './view';
 
-export type TerminalState = 'connecting' | 'online' | 'closed' | 'failed';
+export type TerminalState = 'connecting' | 'online' | 'closed' | 'nonzero' | 'failed';
 type TerminalTab = {
   id: number;
   command: string;
@@ -13,7 +13,6 @@ type TerminalTab = {
 };
 export type TerminalUpdate = Partial<Pick<TerminalTab, 'program' | 'title' | 'state' | 'detail'>>;
 const defaultCommand = '/bin/sh -i';
-const stateLabels = {connecting: 'Запускается', online: 'Работает', closed: 'Завершён', failed: 'Ошибка запуска'};
 
 function initialProgram(command: string) {
   // Show only a simple executable until the server confirms the parsed program.
@@ -57,7 +56,7 @@ export default function TerminalTabs({visible, canChooseSandbox, defaultSandbox,
     if (!command.trim()) return;
     const id = nextId.current++;
     const tab: TerminalTab = {id, command, sandbox: canChooseSandbox && sandbox, program: initialProgram(command),
-      title: '', state: 'connecting', detail: 'Запуск…'};
+      title: '', state: 'connecting', detail: 'starting'};
     setTabs(previous => [...previous, tab]);
     setSelected(id);
     setCommand(defaultCommand);
@@ -86,21 +85,20 @@ export default function TerminalTabs({visible, canChooseSandbox, defaultSandbox,
 
   return <div className="terminal-workspace">
     <div ref={strip} className="terminal-tabs" role="tablist" aria-label="Терминалы" onKeyDown={moveTab}>
-      <div className="terminal-tab-scroll">
-        {tabs.map(tab => {
-          const title = tab.title || tab.program;
-          return <div key={tab.id} className="terminal-tab-group" data-selected={selected === tab.id}>
-            <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab"
-              data-terminal={tab.id} data-state={tab.state} aria-selected={selected === tab.id}
-              aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => setSelected(tab.id)}>
-              <span className="terminal-tab-dot" role="img" aria-label={stateLabels[tab.state]}/>
-              <span className="terminal-tab-number">{tab.id}</span><span className="terminal-tab-title">{title}</span>
-            </button>
-            <button type="button" className="terminal-tab-close" data-close-terminal={tab.id}
-              aria-label={'Закрыть терминал ' + tab.id} onClick={() => remove(tab.id)}>×</button>
-          </div>;
-        })}
-      </div>
+      {tabs.map(tab => {
+        const title = tab.title || tab.program;
+        const status = tab.state === 'failed' ? 'error' : tab.detail;
+        return <div key={tab.id} className="terminal-tab-group" data-selected={selected === tab.id}>
+          <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab"
+            data-terminal={tab.id} data-state={tab.state} aria-selected={selected === tab.id}
+            aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => setSelected(tab.id)}>
+            <span className="terminal-tab-dot" role="img" title={status} aria-label={status}/>
+            <span className="terminal-tab-title">{title}</span>
+          </button>
+          <button type="button" className="terminal-tab-close" data-close-terminal={tab.id}
+            aria-label={'Закрыть терминал ' + tab.id} onClick={() => remove(tab.id)}>×</button>
+        </div>;
+      })}
       <button id="new-terminal" type="button" role="tab" aria-controls="terminal-launch" aria-selected={selected === null}
         aria-label="Новый терминал" title="Новый терминал" onClick={() => setSelected(null)}>+</button>
     </div>
@@ -116,7 +114,10 @@ export default function TerminalTabs({visible, canChooseSandbox, defaultSandbox,
         <button id="start-terminal" type="submit" disabled={!command.trim()}>Запустить</button>
       </form>
     </div>
-    {tabs.map(tab => <TerminalView key={tab.id} id={tab.id} command={tab.command} sandbox={tab.sandbox}
-      connection={tab.state} status={tab.detail} visible={visible && selected === tab.id} update={update}/>)}
+    {tabs.map(tab => tab.state === 'failed'
+      ? <div key={tab.id} className="terminal-frame" hidden={!visible || selected !== tab.id} id={'terminal-panel-' + tab.id}
+          role="tabpanel" aria-labelledby={'terminal-tab-' + tab.id}><pre className="terminal-launch-error" role="alert">{tab.detail}</pre></div>
+      : <TerminalView key={tab.id} id={tab.id} command={tab.command} sandbox={tab.sandbox}
+          connection={tab.state} visible={visible && selected === tab.id} update={update}/>)}
   </div>;
 }

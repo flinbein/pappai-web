@@ -147,6 +147,18 @@ export function bindTerminalTouch(term: Terminal, screen: HTMLElement, handles: 
       }
     } else if (!touches.length && gesture?.mode === 'tap') {
       clear();
+      const point = changedTouches[0];
+      if (point && distance(point, gesture.point) <= 6 && term.modes.mouseTrackingMode !== 'none' && !term.options.disableStdin) {
+        const {clientX, clientY} = point;
+        const box = grid.getBoundingClientRect();
+        if (clientX >= box.left && clientX < box.right && clientY >= box.top && clientY < box.bottom) {
+          // Touch handling suppresses Chrome's compatibility mouse events. Replay a
+          // completed tap through xterm before the keyboard can resize the grid.
+          const mouse = {bubbles: true, cancelable: true, button: 0, clientX, clientY};
+          grid.dispatchEvent(new MouseEvent('mousedown', {...mouse, buttons: 1}));
+          grid.dispatchEvent(new MouseEvent('mouseup', {...mouse, buttons: 0}));
+        }
+      }
       openKeyboard();
     }
     if (!touches.length) gesture = undefined;

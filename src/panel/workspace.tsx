@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { errorMessage, formatJSON, parseJSON, rpc } from './api';
 import type { DirectoryNode, Session } from './api';
 import { Action, field, Form, Submit, useMounted } from './controls';
 import type { Feedback } from './controls';
 import { NodePanel } from './node-panel';
 import { Runners } from './runners';
+import { snapshotReader } from './refresh-snapshot';
+import { usePappaiEvent } from './use-pappai-event';
 
 type Page = 'node' | 'runners' | 'rpc';
 export type Refresh = (preferred?: string) => Promise<void>;
@@ -71,30 +73,63 @@ export function Workspace({ session, feedback }: { session: Session; feedback: F
   const [runnerVisit, setRunnerVisit] = useState(0);
   const [folded, setFolded] = useState(new Set<string>());
   const [replies, setReplies] = useState<Record<string, Reply>>({});
-  const revision = useRef(0);
+  const directory = useRef<DirectoryNode[]>([]);
+  const preferred = useRef<string | undefined>(undefined);
+  const [creationNotice, setCreationNotice] = useState('');
   const mounted = useMounted();
-  const refresh = useCallback(async (preferred?: string) => {
-    const request = ++revision.current;
-    const directory = await rpc<DirectoryNode[]>('discover', {});
-    if (!mounted.current || request !== revision.current) return;
-    setNodes(directory);
-    setSelected(current => directory.find(n => n.id === (preferred ?? current))?.id ?? directory[0]?.id);
-    if (preferred) {
-      setFolded(previous => {
-        const next = new Set(previous);
-        let parent = directory.find(node => node.id === preferred)?.parentId;
-        while (parent) {
-          next.delete(parent);
-          parent = directory.find(node => node.id === parent)?.parentId;
-        }
-        return next;
-      });
+  const selectCreated = useCallback((snapshot: DirectoryNode[]) => {
+    const created = snapshot.find(node => node.id === preferred.current);
+    if (!created) return false;
+    preferred.current = undefined;
+    setCreationNotice('');
+    setSelected(created.id);
+    setFolded(previous => {
+      const next = new Set(previous);
+      let parent = created.parentId;
+      while (parent) {
+        next.delete(parent);
+        parent = snapshot.find(node => node.id === parent)?.parentId ?? null;
+      }
+      return next;
+    });
+    return true;
+  }, []);
+  const readDirectory = useMemo(() => snapshotReader(
+    () => rpc<DirectoryNode[]>('discover', {}),
+    snapshot => {
+      if (!mounted.current) return;
+      directory.current = snapshot;
+      setNodes(snapshot);
+      if (preferred.current && selectCreated(snapshot)) return;
+      if (preferred.current) {
+        preferred.current = undefined;
+        setCreationNotice('Нода создана, но сейчас недоступна в дереве.');
+      }
+      setSelected(current => snapshot.some(node => node.id === current) ? current : snapshot[0]?.id);
+    },
+  ), [mounted, selectCreated]);
+  const refresh = useCallback(async (createdId?: string) => {
+    if (!createdId) return readDirectory();
+    if (!mounted.current) return;
+    preferred.current = createdId;
+    if (selectCreated(directory.current)) return;
+    try {
+      await readDirectory();
+    } catch (error) {
+      if (mounted.current && preferred.current === createdId) {
+        setCreationNotice('Нода создана. Не удалось обновить дерево: ' + errorMessage(error));
+      }
     }
-  }, [mounted]);
+  }, [readDirectory, selectCreated, mounted]);
 
-  useEffect(() => {
-    void refresh().catch(error => { if (mounted.current) feedback(errorMessage(error)); });
-  }, [refresh, feedback, mounted]);
+  const synchronize = useCallback(() => {
+    void readDirectory().catch(error => { if (mounted.current) feedback(errorMessage(error)); });
+  }, [readDirectory, feedback, mounted]);
+  usePappaiEvent({ events: ['$.node.created', '$.node.deleted', '$.node.permissions.updated', '$.app.statusChanged'] },
+    synchronize, { onSubscribed: synchronize, onError: error => {
+      feedback('Не удалось подписаться на изменения дерева: ' + errorMessage(error));
+      synchronize();
+    } });
 
   function navigate(next: Page) {
     if (next === 'runners') setRunnerVisit(previous => previous + 1);
@@ -122,7 +157,13 @@ export function Workspace({ session, feedback }: { session: Session; feedback: F
         const next = new Set(previous);
         if (!next.delete(id)) next.add(id);
         return next;
-      })} choose={id => { navigate('node'); setSelected(id); }} />
+      })} choose={id => {
+        preferred.current = undefined;
+        setCreationNotice('');
+        navigate('node');
+        setSelected(id);
+      }} />
+      {creationNotice && <p role="status">{creationNotice}</p>}
     </aside>
     <div className="inspector">
       <section id="node-panel" hidden={page !== 'node'}>

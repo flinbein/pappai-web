@@ -1,0 +1,74 @@
+<!doctype html>
+<div id="root"></div>
+<output></output>
+<script type="module">
+  import { createElement, useEffect } from 'react';
+  import { flushSync } from 'react-dom';
+  import { createRoot } from 'react-dom/client';
+  import { rpc, startPanelConnection, stopPanelConnection } from '../src/panel/api.ts';
+  import { usePappaiEvent } from '../src/panel/use-pappai-event.ts';
+
+  const output = document.querySelector('output');
+  let socket;
+  class TestSocket {
+    readyState = 0;
+    sent = [];
+    constructor() { socket = this; }
+    open() { this.readyState = 1; this.onopen(); }
+    send(text) { this.sent.push(JSON.parse(text)); }
+    message(body) { this.onmessage({ data: JSON.stringify({ jsonrpc: '2.0', ...body }) }); }
+    close() { this.readyState = 3; }
+  }
+  window.WebSocket = TestSocket;
+  function equal(actual, expected) {
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw Error(JSON.stringify(actual) + ' differs from ' + JSON.stringify(expected));
+    }
+  }
+  try {
+    for (const alreadyOpen of [true, false]) {
+      startPanelConnection('user', () => { throw Error('Unexpected expiry'); });
+      if (alreadyOpen) socket.open();
+      const root = createRoot(document.querySelector('#root'));
+      const seen = [];
+      function Subscriber({ label, disabled }) {
+        usePappaiEvent({ events: ['changed'], node: 'app' }, () => seen.push(label), {
+          disabled, onSubscribed: () => seen.push(label + ' ready'),
+        });
+        useEffect(() => { void rpc('call', {}).catch(() => {}); }, []);
+        return null;
+      }
+      const render = (label, disabled = false) => flushSync(() =>
+        root.render(createElement(Subscriber, { label, disabled })));
+      render('old');
+      if (!alreadyOpen) { equal(socket.sent, []); socket.open(); }
+      equal(socket.sent.map(r => r.method), ['subscriptions.add', 'call']);
+      const add = socket.sent[0];
+      const first = add.params.subscriptions[0].id;
+      const notify = id => socket.message({ method: 'event',
+        params: { event: 'changed', from: 'app', data: {}, subscriptionIds: [id] } });
+      render('current');
+      equal(socket.sent.length, 2);
+      socket.message({ id: add.id, result: {} });
+      notify(first);
+      equal(seen, ['current ready', 'current']);
+      render('disabled', true);
+      equal(socket.sent[2].params, { ids: [first] });
+      notify(first);
+      render('again');
+      const second = socket.sent[3].params.subscriptions[0].id;
+      if (first === second) throw Error('Subscription ID reused');
+      notify(first);
+      notify(second);
+      flushSync(() => root.unmount());
+      equal(socket.sent[4].params, { ids: [second] });
+      notify(second);
+      socket.message({ id: socket.sent[3].id, result: {} });
+      equal(seen, ['current ready', 'current', 'again']);
+      stopPanelConnection();
+    }
+    output.textContent = 'pass';
+  } catch (error) {
+    output.textContent = error.stack;
+  }
+</script>

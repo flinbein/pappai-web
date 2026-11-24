@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { call, errorMessage, formatJSON, getCatalog, parseJSON, statusLabel } from './api';
 import type { Catalog, Status } from './api';
 import { Action, useMounted } from './controls';
 import type { Feedback } from './controls';
 import type { Refresh } from './workspace';
+import { snapshotReader } from './refresh-snapshot';
+import { usePappaiEvent } from './use-pappai-event';
 
 interface AppState {
   status: Status;
@@ -29,24 +31,31 @@ export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Pr
   const [manifest, setManifest] = useState<string>();
   const [saved, setSaved] = useState('');
   const editor = useRef<HTMLTextAreaElement>(null);
-  const revision = useRef(0);
   const mounted = useMounted();
-  const readState = useCallback(async () => {
-    const request = ++revision.current;
-    const [appState, executors] = await Promise.all([
+  const readState = useMemo(() => snapshotReader(
+    () => Promise.all([
       call<AppState>(id, '$.app.get'), call<Pool>(id, '$.app.executors.get'),
-    ]);
-    if (!mounted.current || request !== revision.current) return;
-    setState(appState);
-    setPool(executors);
-    onStatus(appState.status);
-  }, [id, mounted, onStatus]);
-
+    ]),
+    ([appState, executors]) => {
+      if (!mounted.current) return;
+      setState(appState);
+      setPool(executors);
+      onStatus(appState.status);
+    },
+  ), [id, mounted, onStatus]);
+  const synchronize = useCallback(() => {
+    void readState().catch(error => { if (mounted.current) feedback(errorMessage(error)); });
+  }, [readState, mounted, feedback]);
+  usePappaiEvent({ node: id, events: ['$.app.statusChanged', '$.app.restarted', '$.node.lastIssueUpdated'] },
+    synchronize, { onSubscribed: synchronize, onError: error => {
+      feedback('Не удалось подписаться на изменения APP: ' + errorMessage(error));
+      synchronize();
+    } });
   useEffect(() => {
-    const report = (error: unknown) => { if (mounted.current) feedback(errorMessage(error)); };
-    void readState().catch(report);
-    void call(id, '$.app.manifest.get').then(source => setManifest(formatJSON(source))).catch(report);
-  }, [id, feedback, readState, mounted]);
+    void call(id, '$.app.manifest.get')
+      .then(source => { if (mounted.current) setManifest(formatJSON(source)); })
+      .catch(error => { if (mounted.current) feedback(errorMessage(error)); });
+  }, [id, feedback, mounted]);
 
   async function manage(command: 'start' | 'stop' | 'restart') {
     await call(id, '$.app.' + command);

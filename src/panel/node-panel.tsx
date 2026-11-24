@@ -52,7 +52,7 @@ export function NodePanel({ node, nodes, admin, refresh, reply, updateReply }: P
   const [creating, setCreating] = useState(false);
   const { id, type } = node;
 
-  useEffect(() => { setStatus(node.status); }, [node]);
+  useEffect(() => { setStatus(node.status); }, [node.status]);
   useEffect(() => {
     let current = true;
     async function load() {

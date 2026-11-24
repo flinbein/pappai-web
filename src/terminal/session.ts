@@ -18,7 +18,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, events: Sess
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(screen);
-  const url = new URL('/ws/terminal', location.href);
+  const url = new URL('/api/ws/terminal', location.href);
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   if (new URLSearchParams(location.search).get('sandbox') === '1') url.search = 'sandbox=1';
   const socket = new WebSocket(url);

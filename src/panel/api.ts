@@ -1,3 +1,5 @@
+import { PanelConnection } from './transport';
+
 export type NodeType = 'workspace' | 'team' | 'user' | 'app' | 'profile';
 export type Status = 'working' | 'stopping' | 'stopped' | 'error';
 export interface DirectoryNode {
@@ -45,20 +47,40 @@ export function parseJSON(text: string): unknown {
   }
 }
 
-let requestId = 0;
+let active: { user: string; connection: PanelConnection; onExpired: () => void } | undefined;
+
+export function stopPanelConnection() {
+  active?.connection.stop();
+  active = undefined;
+}
+
+export function startPanelConnection(user: string, onExpired: () => void) {
+  if (active?.user === user) {
+    active.onExpired = onExpired;
+    return;
+  }
+  stopPanelConnection();
+  const connection = new PanelConnection(
+    () => new WebSocket(new URL('/api/ws/web', location.href)),
+    async () => (await getSession()).user === user,
+    () => {
+      if (active?.connection !== connection) return;
+      const expired = active.onExpired;
+      active = undefined;
+      expired();
+    },
+  );
+  active = { user, connection, onExpired };
+}
+
+export function subscribePanelEvent(...args: Parameters<PanelConnection['subscribe']>) {
+  if (!active) throw new Error('Сессия завершена. Войдите снова.');
+  return active.connection.subscribe(...args);
+}
 
 export async function rpc<T = unknown>(method: string, params: unknown): Promise<T> {
-  const response = await fetch('/rpc', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: ++requestId, method, params }),
-  });
-  if (!response.ok) {
-    throw new Error(response.status === 401 ? 'Сессия завершена. Войдите снова.' : 'HTTP ' + response.status);
-  }
-  const message = await response.json();
-  if (message.error) throw new Error(message.error.message);
-  return message.result;
+  if (!active) throw new Error('Сессия завершена. Войдите снова.');
+  return active.connection.rpc<T>(method, params);
 }
 
 export function call<T = unknown>(node: string, method: string, data: unknown = {}, version?: string) {
@@ -74,13 +96,13 @@ export function getRunners() {
 }
 
 export async function getSession(): Promise<Session> {
-  const response = await fetch('/session');
+  const response = await fetch('/api/session', { cache: 'no-store' });
   if (!response.ok) throw new Error('HTTP ' + response.status);
   return response.json();
 }
 
 async function auth<T = unknown>(path: string, data: unknown = {}): Promise<T> {
-  const response = await fetch('/auth/' + path, {
+  const response = await fetch('/api/auth/' + path, {
     method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
   });

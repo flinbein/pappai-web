@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { errorMessage, getSession, login, logout, recover, register } from './api';
+import { errorMessage, getSession, login, logout, recover, register, startPanelConnection, stopPanelConnection } from './api';
 import type { Session } from './api';
 import { Action, field, Form, Submit } from './controls';
 import type { Feedback } from './controls';
@@ -37,11 +37,28 @@ function SignIn({ reload, feedback }: { reload: () => Promise<void>; feedback: F
 function Panel() {
   const [session, setSession] = useState<Session>();
   const [notice, setNotice] = useState('');
-  async function reload() {
-    setSession(await getSession());
+  const revision = useRef(0);
+  const reload = useCallback(async () => {
+    const attempt = ++revision.current;
+    const next = await getSession();
+    if (attempt !== revision.current) return;
+    if (next.user) {
+      startPanelConnection(next.user, () => {
+        revision.current++;
+        stopPanelConnection();
+        setSession({ user: null, canChooseSandbox: false, canManageApps: false });
+        setNotice('Сессия завершена. Войдите снова.');
+      });
+    } else {
+      stopPanelConnection();
+    }
+    setSession(next);
     setNotice('');
-  }
-  useEffect(() => { void reload().catch(error => setNotice(errorMessage(error))); }, []);
+  }, []);
+  useEffect(() => {
+    void reload().catch(error => setNotice(errorMessage(error)));
+    return () => { revision.current++; stopPanelConnection(); };
+  }, [reload]);
 
   return <>
     <header className="topbar"><strong>pappai</strong><span>Workspace</span>

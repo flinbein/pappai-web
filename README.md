@@ -8,6 +8,22 @@ Use Node.js 24 LTS or later. Run `npm ci`, then `npm run dev`. For local develop
 
 The supported browsers are current desktop Chrome and Chrome for Android. Build with `npm run build` and verify the resulting release with `npm test`. TypeScript checks and Vite 8 compile both HTML entry points. The terminal uses xterm.js.
 
+## Panel subscriptions
+
+The signed-in panel uses one `/api/ws/web` connection for RPC and event subscriptions. Components can register a listener with the following hook:
+
+```tsx
+usePappaiEvent(
+  { node: appId, events: '$.app.statusChanged' },
+  event => updateStatus(event.data),
+  { disabled: !appId, onSubscribed: reloadStatus },
+);
+```
+
+The hook owns its subscription ID. It removes the listener on unmount and restores it on reconnect while the component is active. Changing the callback or passing an equivalent filter keeps the registration. `onSubscribed` is optional and runs after each successful registration. Use it to refresh data that may have changed while disconnected.
+
+Registration is queued synchronously in a layout effect. A `call` from a passive effect in the same mount follows the subscription on the wire, even while the socket is opening. Disconnecting rejects interrupted calls. The panel refreshes its tree through `discover`; manual refresh also works when the USER can discover nodes but lacks permission for their events.
+
 ## Distribution
 
 GitHub Actions builds and checks the interface on pull requests. Each push to master produces an npm archive and publishes it as `@flinbein/pappai-web`. The archive contains the compiled `dist` directory. Its assets use URLs containing the package version so old tabs can continue to use their own release.

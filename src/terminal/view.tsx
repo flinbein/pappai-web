@@ -198,33 +198,37 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
       <div ref={toolbar} className="terminal-toolbar" hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
         onPointerDown={event => { if (event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
         <span ref={notice} className="terminal-hint" role="status"/>
-        <div className="terminal-keys" hidden={nativePaste || menu !== 'input'} aria-label="Input keys">
-          <button disabled={!online} data-key="Escape" data-hint="Send Escape." onClick={() => keyPress('Escape')}>Esc</button>
-          <button disabled={!online} id="tab" data-hint="Send Tab. Use Shift for reverse Tab." onClick={event => keyPress('Tab', event.shiftKey)}>Tab</button>
-          <button disabled={!online} id="arrow-pad" aria-label="Arrow keys: drag in any direction">✥</button>
-          {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} id={name} disabled={!online} aria-pressed={modifiers[name]}
-            aria-label={name} data-hint={'Keep ' + name + ' on for toolbar keys. Typing releases it.'}
-            onClick={() => { session.current?.modifier(name); session.current?.term.focus(); }}>{name === 'ctrl' ? 'Ctrl' : name === 'alt' ? 'Alt' : '⇧'}</button>)}
-          <button disabled={!online} id="nav-pad" aria-label="Navigation keys: drag for PgUp, PgDown, Home or End">Nav</button>
-          <button disabled={!online} data-hint="Show function keys F1–F12." onClick={() => switchMenu('function')}>Fn</button>
-          <button disabled={!online} data-hint="Send Insert." onClick={() => keyPress('Insert')}>Ins</button>
-          <button disabled={!online} data-hint="Send Delete." onClick={() => keyPress('Delete')}>Del</button>
-          <button className="terminal-menu-switch" id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu('tools')}>☰</button>
+        <div className="terminal-key-row" role="group" hidden={nativePaste || menu !== 'input'} aria-label="Input keys">
+          <div className="terminal-keys">
+            <button disabled={!online} data-key="Escape" data-hint="Send Escape." onClick={() => keyPress('Escape')}>Esc</button>
+            <button disabled={!online} id="tab" data-hint="Send Tab. Use Shift for reverse Tab." onClick={event => keyPress('Tab', event.shiftKey)}>Tab</button>
+            <button disabled={!online} id="arrow-pad" aria-label="Arrow keys: drag in any direction">✥</button>
+            {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} id={name} disabled={!online} aria-pressed={modifiers[name]}
+              aria-label={name} data-hint={'Keep ' + name + ' on for toolbar keys. Typing releases it.'}
+              onClick={() => { session.current?.modifier(name); session.current?.term.focus(); }}>{name === 'ctrl' ? 'Ctrl' : name === 'alt' ? 'Alt' : '⇧'}</button>)}
+            <button disabled={!online} id="nav-pad" aria-label="Navigation keys: drag for PgUp, PgDown, Home or End">Nav</button>
+            <button disabled={!online} data-hint="Show function keys F1–F12." onClick={() => switchMenu('function')}>Fn</button>
+            <button disabled={!online} data-hint="Send Insert." onClick={() => keyPress('Insert')}>Ins</button>
+            <button disabled={!online} data-hint="Send Delete." onClick={() => keyPress('Delete')}>Del</button>
+          </div>
+          <button id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu('tools')}>☰</button>
         </div>
-        {menu === 'function' && !nativePaste && <div className="terminal-function-row" role="group" aria-label="Function keys">
+        {menu === 'function' && !nativePaste && <div className="terminal-key-row" role="group" aria-label="Function keys">
           <div className="terminal-keys">
             {functionKeys.map(name => <button key={name} disabled={!online} data-hint={'Send ' + name + '.'}
               onClick={() => { keyPress(name); switchMenu('input'); }}>{name}</button>)}
           </div>
           <button aria-label="Back to input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>↩</button>
         </div>}
-        <div className="terminal-keys" hidden={nativePaste || menu !== 'tools'} aria-label="Terminal tools">
-          <button id="copy" data-hint="Copy selected text or choose from scrollback." onClick={copy}>Copy</button>
-          <button id="paste" disabled={!online} data-hint="Paste text from the clipboard." onClick={paste}>Paste</button>
-          <button id="font-up" aria-label="Increase font size" data-hint="Increase the font size." onClick={() => stepFont(1)}>A+</button>
-          <button id="font-down" aria-label="Decrease font size" data-hint="Decrease the font size." onClick={() => stepFont(-1)}>A−</button>
-          <button id="fullscreen" hidden={!document.fullscreenEnabled} aria-label="Enter fullscreen" data-hint="">⛶</button>
-          <button className="terminal-menu-switch" id="terminal-input" aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>⌨</button>
+        <div className="terminal-key-row" role="group" hidden={nativePaste || menu !== 'tools'} aria-label="Terminal tools">
+          <div className="terminal-keys">
+            <button id="copy" data-hint="Copy selected text or choose from scrollback." onClick={copy}>Copy</button>
+            <button id="paste" disabled={!online} data-hint="Paste text from the clipboard." onClick={paste}>Paste</button>
+            <button id="font-up" aria-label="Increase font size" data-hint="Increase the font size." onClick={() => stepFont(1)}>A+</button>
+            <button id="font-down" aria-label="Decrease font size" data-hint="Decrease the font size." onClick={() => stepFont(-1)}>A−</button>
+            <button id="fullscreen" hidden={!document.fullscreenEnabled} aria-label="Enter fullscreen" data-hint="">⛶</button>
+          </div>
+          <button id="terminal-input" aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>⌨</button>
         </div>
         {visible && nativePaste && online && <PasteField dismiss={dismissPaste} send={text => {
           if (session.current?.online()) session.current.paste(text);

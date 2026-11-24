@@ -82,12 +82,11 @@
   touch-action: pan-x;
   scrollbar-width: none;
 }
-.terminal-function-row { display: flex; align-items: center; gap: 3px; }
-.terminal-function-row .terminal-keys { flex: 1; min-width: 0; }
-.terminal-view .terminal-keys button, .terminal-function-row > button, .terminal-native-paste button { flex: none; white-space: nowrap; height: 36px; min-width: 44px; }
+.terminal-key-row { display: flex; align-items: center; gap: 3px; }
+.terminal-key-row .terminal-keys { flex: 1; min-width: 0; }
+.terminal-key-row button, .terminal-native-paste button { flex: none; white-space: nowrap; height: 36px; min-width: 44px; }
 .terminal-view .terminal-keys button[aria-pressed=true] { background: #b0e6d4; color: #13241f; }
-.terminal-keys button { user-select: none; -webkit-touch-callout: none; }
-.terminal-view .terminal-menu-switch { margin-inline-start: auto; }
+.terminal-key-row button { user-select: none; -webkit-touch-callout: none; }
 .terminal-keys :is(#arrow-pad, #nav-pad) { touch-action: none; cursor: move; }
 @media (max-width: 24rem) {
   .terminal-view .terminal-keys button { min-width: 36px; padding-inline: 5px; }

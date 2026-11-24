@@ -14,8 +14,8 @@ export function isSpecialKey(key: string) {
   return cursorKeys.has(key) || ['Escape', 'Tab', 'PageUp', 'PageDown'].includes(key);
 }
 
-export function encodeKey(key: string, {ctrl, alt}: Modifiers, applicationCursor: boolean, special: boolean) {
-  const modifier = 1 + (alt ? 2 : 0) + (ctrl ? 4 : 0);
+export function encodeKey(key: string, {ctrl, alt}: Modifiers, applicationCursor: boolean, special: boolean, shift = false) {
+  const modifier = 1 + Number(shift) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
   const suffix = special && cursorKeys.get(key);
   if (suffix) {
     const prefix = modifier !== 1 ? '[1;' + modifier : applicationCursor ? 'O' : '[';
@@ -26,7 +26,7 @@ export function encodeKey(key: string, {ctrl, alt}: Modifiers, applicationCursor
   }
   let text = key;
   if (special && key === 'Escape') text = escape;
-  if (special && key === 'Tab') text = '\t';
+  if (special && key === 'Tab') text = shift ? escape + '[Z' : '\t';
   const first = text.charAt(0);
   const code = first.toUpperCase().charCodeAt(0);
   if (ctrl && ((code >= 64 && code <= 95) || first === ' ' || first === '?')) {

@@ -11,26 +11,40 @@ type SessionEvents = {
   paste(): void;
 };
 
-export const defaultFontSize = 15;
+export const defaultFontSize = 16;
 
-export function openTerminal(screen: HTMLElement, fontSize: number, events: SessionEvents) {
-  const term = new Terminal({cursorBlink: true, fontSize, fontFamily: 'monospace', theme: {background: '#142021'}});
+export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boolean, events: SessionEvents) {
+  const term = new Terminal({
+    cursorBlink: true, fontSize, fontFamily: 'monospace', scrollback: 3000,
+    theme: {background: '#12191b', foreground: '#e5eeec', selectionBackground: '#387466'},
+  });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(screen);
   const url = new URL('/api/ws/terminal', location.href);
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  if (new URLSearchParams(location.search).get('sandbox') === '1') url.search = 'sandbox=1';
+  if (sandbox) url.search = 'sandbox=1';
   const socket = new WebSocket(url);
   socket.binaryType = 'arraybuffer';
   const encoder = new TextEncoder();
   let modifiers = noModifiers;
   let issue = '';
+  let lastSize = '';
+  let opened = false;
+  let localClose = false;
 
   const online = () => socket.readyState === WebSocket.OPEN;
+  const visible = () => screen.clientWidth > 0 && screen.clientHeight > 0;
   function resize() {
-    fit.fit();
-    if (online()) socket.send(JSON.stringify({cols: term.cols, rows: term.rows}));
+    if (!visible()) return;
+    const size = fit.proposeDimensions();
+    if (!size || !Number.isFinite(size.cols) || !Number.isFinite(size.rows)) return;
+    term.resize(Math.min(1000, size.cols), Math.min(1000, size.rows));
+    const message = JSON.stringify({cols: term.cols, rows: term.rows});
+    if (online() && message !== lastSize) {
+      socket.send(message);
+      lastSize = message;
+    }
   }
   function send(data: Uint8Array<ArrayBuffer>) {
     for (let i = 0; online() && i < data.length; i += 16384) socket.send(data.subarray(i, i + 16384));
@@ -42,8 +56,8 @@ export function openTerminal(screen: HTMLElement, fontSize: number, events: Sess
   function clearModifiers() {
     if (modifiers.ctrl || modifiers.alt) setModifiers(noModifiers);
   }
-  function key(value: string, special = true) {
-    const data = encodeKey(value, modifiers, term.modes.applicationCursorKeysMode, special);
+  function key(value: string, special = true, shift = false) {
+    const data = encodeKey(value, modifiers, term.modes.applicationCursorKeysMode, special, shift);
     clearModifiers();
     send(encoder.encode(data));
   }
@@ -64,7 +78,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, events: Sess
     }
     if ((modifiers.ctrl || modifiers.alt) && isSpecialKey(event.key)) {
       event.preventDefault();
-      key(event.key);
+      key(event.key, true, event.shiftKey);
       return false;
     }
     return true;
@@ -73,9 +87,9 @@ export function openTerminal(screen: HTMLElement, fontSize: number, events: Sess
   observer.observe(screen);
   resize();
   socket.onopen = () => {
+    opened = true;
     events.opened();
     resize();
-    term.focus();
   };
   socket.onmessage = ({data}: MessageEvent<unknown>) => {
     if (data instanceof ArrayBuffer) {
@@ -88,19 +102,21 @@ export function openTerminal(screen: HTMLElement, fontSize: number, events: Sess
       else events.mode(Boolean(info.sandboxed));
     }
   };
-  socket.onerror = () => { issue ||= 'Соединение недоступно. Проверьте вход в панель.'; };
-  socket.onclose = () => {
-    observer.disconnect();
+  socket.onclose = event => {
     term.options.disableStdin = true;
     clearModifiers();
-    events.closed(issue || 'Терминал закрыт');
+    const ended = localClose || event.code === 1000;
+    const lost = opened ? 'Соединение потеряно' : 'Соединение недоступно. Проверьте вход в панель.';
+    events.closed(issue || (ended ? 'Сеанс завершён' : lost));
   };
-  const close = () => socket.close();
+  function close() {
+    localClose = true;
+    socket.close();
+  }
   window.addEventListener('pagehide', close);
   return {
-    term, resize, key, close, online, clearModifiers,
+    term, resize, key, close, online, visible, clearModifiers,
     modifier(name: keyof Modifiers) { setModifiers({...modifiers, [name]: !modifiers[name]}); },
-    clearAlt() { if (modifiers.alt) setModifiers({...modifiers, alt: false}); },
     dispose() {
       window.removeEventListener('pagehide', close);
       screen.removeEventListener('paste', clearModifiers, true);

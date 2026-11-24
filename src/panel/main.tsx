@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createBrowserRouter, RouterProvider } from 'react-router';
 import { errorMessage, getSession, login, logout, recover, register, startPanelConnection, stopPanelConnection } from './api';
 import type { Session } from './api';
 import { Action, field, Form, Submit } from './controls';
@@ -61,16 +62,14 @@ function Panel() {
   }, [reload]);
 
   return <>
-    <header className="topbar"><strong>pappai</strong><span>Workspace</span>
-      {session?.user && <Action id="logout" feedback={setNotice} run={async () => { await logout(); await reload(); }}>Выйти</Action>}
-    </header>
     <main>
       {session && (session.user
-        ? <Workspace key={session.user} session={session} feedback={setNotice} />
+        ? <Workspace key={session.user} session={session} feedback={setNotice} signOut={async () => { await logout(); await reload(); }} />
         : <SignIn reload={reload} feedback={setNotice} />)}
       <p id="notice" role="status">{notice}</p>
     </main>
   </>;
 }
 
-createRoot(document.getElementById('root')!).render(<Panel />);
+const router = createBrowserRouter([{ path: '*', element: <Panel /> }]);
+createRoot(document.getElementById('root')!).render(<RouterProvider router={router} />);

@@ -1,6 +1,8 @@
 # pappai-web
 
-The workspace panel and interactive terminal for [pappai](https://github.com/flinbein/pappai). Both pages run on the controller origin. The panel uses WebAuthn, the controller's session and JSON RPC. Each terminal tab owns a separate WebSocket and PTY.
+The workspace panel and interactive terminal for [pappai](https://github.com/flinbein/pappai). The panel uses WebAuthn, the controller's session and JSON RPC. React Router opens a node summary at `/nodes/:id` and its method form at `/nodes/:id/methods/:name`. On a phone, the breadcrumbs switch visible columns in place, preserving the URL, form and result. Files open in the controller's file browser.
+
+Each workspace tab can open one terminal WebSocket and PTY. The green dot beside Terminal indicates an open connection. Navigating to a node keeps the terminal running. Closing the shell leaves its output available to select and copy until the user starts a new terminal. Reloading the page or signing out ends the connection.
 
 ## Development
 

@@ -16,9 +16,10 @@ export interface Modifiers {
 }
 
 export const noModifiers: Modifiers = {ctrl: false, alt: false, shift: false};
+const tildeKeys = new Map(Object.entries({Insert:'2', Delete:'3', PageUp:'5', PageDown:'6'}));
 
 export function isSpecialKey(key: string) {
-  return cursorKeys.has(key) || functionCodes.has(key) || ['Escape', 'Tab', 'PageUp', 'PageDown'].includes(key);
+  return cursorKeys.has(key) || functionCodes.has(key) || tildeKeys.has(key) || key === 'Escape' || key === 'Tab';
 }
 
 export function encodeKey(key: string, {ctrl, alt, shift: latchedShift}: Modifiers, applicationCursor: boolean, special: boolean, shift = false) {
@@ -34,8 +35,9 @@ export function encodeKey(key: string, {ctrl, alt, shift: latchedShift}: Modifie
     const prefix = modifier !== 1 ? '[1;' + modifier : applicationCursor ? 'O' : '[';
     return escape + prefix + suffix;
   }
-  if (special && (key === 'PageUp' || key === 'PageDown')) {
-    return escape + '[' + (key === 'PageUp' ? '5' : '6') + (modifier === 1 ? '' : ';' + modifier) + '~';
+  const tilde = special && tildeKeys.get(key);
+  if (tilde) {
+    return escape + '[' + tilde + (modifier === 1 ? '' : ';' + modifier) + '~';
   }
   let text = key;
   if (shift && !special && key) {

@@ -6,7 +6,7 @@ import {bindBell} from './bell';
 import {CopyDialog, PasteField, useTerminalClipboard} from './clipboard';
 import {functionKeys, noModifiers} from './keys';
 import {defaultFontSize, openTerminal, type TerminalSession} from './session';
-import {bindArrows, bindButtonHints, bindToolbarShortcut} from './toolbar';
+import {bindDirectionPad, bindButtonHints, bindToolbarShortcut} from './toolbar';
 import {bindTerminalTouch} from './touch';
 import {bindViewport, openKeyboard} from './viewport';
 
@@ -47,6 +47,32 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   const [modifiers, setModifiers] = useState(noModifiers);
   const [toolsVisible, setToolsVisible] = useState(false);
   const [menu, setMenu] = useState<'input' | 'tools' | 'function'>('input');
+  useLayoutEffect(() => {
+    if (!visible || connection !== 'online' || !navigator.wakeLock) return;
+    let generation = 0;
+    let lock: WakeLockSentinel | undefined;
+    async function update() {
+      const request = ++generation;
+      if (document.visibilityState !== 'visible') {
+        void lock?.release();
+        lock = undefined;
+        return;
+      }
+      if (lock && !lock.released) return;
+      try {
+        const next = await navigator.wakeLock.request('screen');
+        if (request === generation) lock = next;
+        else await next.release();
+      } catch { /* The browser or device's power policy may decline a screen lock. */ }
+    }
+    void update();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      generation++;
+      document.removeEventListener('visibilitychange', update);
+      void lock?.release();
+    };
+  }, [visible, connection]);
   const statusListener = useRef(onStatus);
   useLayoutEffect(() => { statusListener.current = onStatus; }, [onStatus]);
   const report = useCallback((text: string, anchor?: HTMLElement) => {
@@ -117,7 +143,8 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
     bindViewport(scope, button('fullscreen'), current, report, signal);
     bindBell(current.term, scope, signal);
     bindButtonHints(keys, report, signal);
-    bindArrows(button('arrow-pad'), signal, key, report);
+    bindDirectionPad(button('arrow-pad'), 'arrows', signal, key, report);
+    bindDirectionPad(button('nav-pad'), 'nav', signal, key, report);
     current.resize();
     if (current.online() && !matchMedia('(pointer: coarse)').matches) current.term.focus();
     return () => {
@@ -178,7 +205,10 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
           {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} id={name} disabled={!online} aria-pressed={modifiers[name]}
             aria-label={name} data-hint={'Keep ' + name + ' on for toolbar keys. Typing releases it.'}
             onClick={() => { session.current?.modifier(name); session.current?.term.focus(); }}>{name === 'ctrl' ? 'Ctrl' : name === 'alt' ? 'Alt' : '⇧'}</button>)}
+          <button disabled={!online} id="nav-pad" aria-label="Navigation keys: drag for PgUp, PgDown, Home or End">Nav</button>
           <button disabled={!online} data-hint="Show function keys F1–F12." onClick={() => switchMenu('function')}>Fn</button>
+          <button disabled={!online} data-hint="Send Insert." onClick={() => keyPress('Insert')}>Ins</button>
+          <button disabled={!online} data-hint="Send Delete." onClick={() => keyPress('Delete')}>Del</button>
           <button className="terminal-menu-switch" id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu('tools')}>☰</button>
         </div>
         {menu === 'function' && !nativePaste && <div className="terminal-function-row" role="group" aria-label="Function keys">

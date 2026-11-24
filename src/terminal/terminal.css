@@ -88,7 +88,7 @@
 .terminal-view .terminal-keys button[aria-pressed=true] { background: #b0e6d4; color: #13241f; }
 .terminal-keys button { user-select: none; -webkit-touch-callout: none; }
 .terminal-view .terminal-menu-switch { margin-inline-start: auto; }
-.terminal-keys #arrow-pad { touch-action: none; cursor: move; }
+.terminal-keys :is(#arrow-pad, #nav-pad) { touch-action: none; cursor: move; }
 @media (max-width: 24rem) {
   .terminal-view .terminal-keys button { min-width: 36px; padding-inline: 5px; }
 }

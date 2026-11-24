@@ -121,10 +121,13 @@ export function bindButtonHints(toolbar: HTMLElement, report: Hint, signal: Abor
 
 const directions = {ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓'};
 type Arrow = keyof typeof directions;
+const navigation = {ArrowLeft: 'Home', ArrowRight: 'End', ArrowUp: 'PageUp', ArrowDown: 'PageDown'} as const;
 
-export function bindArrows(button: GestureButton, signal: AbortSignal, act: (key: Arrow, shift: boolean) => void, report: Hint) {
+export function bindDirectionPad(button: GestureButton, mode: 'arrows' | 'nav', signal: AbortSignal, act: (key: string, shift: boolean) => void, report: Hint) {
   let timer: number | undefined;
-  const hint = () => report('Drag in any direction for arrows. Hold after dragging to repeat.', button);
+  const hint = () => report(mode === 'nav' ? '↑ PgUp · ↓ PgDown · ← Home · → End. Hold to repeat pages.'
+    : 'Drag in any direction for arrows. Hold after dragging to repeat.', button);
+  const keyFor = (arrow: Arrow) => mode === 'nav' ? navigation[arrow] : arrow;
   bindPress(button, signal, {
     start(event) {
       const press = {...point(event), tapped: true, locked: false};
@@ -145,11 +148,13 @@ export function bindArrows(button: GestureButton, signal: AbortSignal, act: (key
       if (Math.max(x, y) < 1.25 * Math.min(x, y)) return;
       const arrow = x > y ? (dx < 0 ? 'ArrowLeft' : 'ArrowRight') : (dy < 0 ? 'ArrowUp' : 'ArrowDown');
       press.locked = true;
+      const key = keyFor(arrow);
       button.textContent = directions[arrow];
-      act(arrow, false);
+      act(key, false);
+      if (key === 'Home' || key === 'End') return;
       timer = window.setTimeout(function repeat() {
-        act(arrow, false);
-        timer = window.setTimeout(repeat, 65);
+        act(key, false);
+        timer = window.setTimeout(repeat, mode === 'nav' ? 330 : 65);
       }, 400);
     },
     finish(press) { if (press.tapped) hint(); },
@@ -159,7 +164,7 @@ export function bindArrows(button: GestureButton, signal: AbortSignal, act: (key
   button.addEventListener('keydown', event => {
     if (Object.hasOwn(directions, event.key)) {
       event.preventDefault();
-      act(event.key as Arrow, event.shiftKey);
+      act(keyFor(event.key as Arrow), event.shiftKey);
     }
   }, {signal});
 }

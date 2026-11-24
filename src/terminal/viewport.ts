@@ -14,21 +14,14 @@ export function openKeyboard(session: TerminalSession) {
 
 export function bindViewport(root: HTMLElement, button: HTMLButtonElement, session: TerminalSession,
   report: (message: string) => void, signal: AbortSignal) {
-  const overlay = window.isSecureContext ? keyboard : undefined;
-  const previousOverlay = overlay?.overlaysContent;
-  if (overlay) overlay.overlaysContent = true;
   let normalWindow: {width: number; height: number} | undefined;
   let generation = 0;
   function layout() {
     if (signal.aborted || !root.clientHeight) return;
     const box = root.getBoundingClientRect();
     const vv = window.visualViewport;
-    const rect = overlay?.boundingRect;
     let edge = box.bottom;
-    if (overlay) {
-      // A floating keyboard doesn't cover the full bottom edge of the workspace.
-      if (rect && rect.height > 0 && rect.bottom >= innerHeight - 1) edge = Math.min(edge, rect.top);
-    } else if (vv && vv.scale === 1) {
+    if (vv && vv.scale === 1) {
       const bottom = vv.offsetTop + vv.height;
       edge = Math.min(edge, bottom);
       if (normalWindow && !document.fullscreenElement && !document.hidden) {
@@ -100,11 +93,11 @@ export function bindViewport(root: HTMLElement, button: HTMLButtonElement, sessi
         await document.exitFullscreen();
         if (!interrupted()) normalWindow = undefined;
       } else {
-        if (touch && !overlay) {
+        if (touch) {
           normalWindow = {width: innerWidth, height: Math.min(innerHeight,
             normalWindow?.width === innerWidth ? normalWindow.height : Infinity)};
         }
-        await root.requestFullscreen();
+        await root.requestFullscreen({navigationUI: 'hide'});
       }
       if (reopen) {
         if (!await waitForViewport(() => true, 180, 900) || interrupted() || !session.online()) return;
@@ -122,7 +115,6 @@ export function bindViewport(root: HTMLElement, button: HTMLButtonElement, sessi
   }, {signal});
   signal.addEventListener('abort', () => {
     observer.disconnect();
-    if (overlay) overlay.overlaysContent = previousOverlay!;
     root.style.removeProperty('--terminal-ime');
     root.style.removeProperty('--terminal-safe');
   }, {once: true});

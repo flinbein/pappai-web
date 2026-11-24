@@ -51,11 +51,10 @@ export function useTerminalClipboard(session: RefObject<TerminalSession | null>,
   const paste = useCallback(async () => {
     const current = session.current;
     if (!current?.online() || !current.visible()) return;
-    current.clearModifiers();
     try {
       const text = await navigator.clipboard.readText();
       if (session.current === current && current.online() && current.visible()) {
-        current.term.paste(text);
+        current.paste(text);
         current.term.focus();
       }
     } catch {

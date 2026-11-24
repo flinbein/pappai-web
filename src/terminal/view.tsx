@@ -6,7 +6,7 @@ import {bindBell} from './bell';
 import {CopyDialog, PasteField, useTerminalClipboard} from './clipboard';
 import {noModifiers} from './keys';
 import {defaultFontSize, openTerminal, type TerminalSession} from './session';
-import {bindArrows, bindButtonHints} from './toolbar';
+import {bindArrows, bindButtonHints, bindToolbarShortcut} from './toolbar';
 import {bindTerminalTouch} from './touch';
 import {bindViewport, openKeyboard} from './viewport';
 
@@ -45,7 +45,7 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   const [connection, setConnection] = useState<TerminalStatus>('connecting');
   const [status, setStatus] = useState('Подключение…');
   const [modifiers, setModifiers] = useState(noModifiers);
-  const [toolsVisible, setToolsVisible] = useState(() => !matchMedia('(pointer: coarse)').matches);
+  const [toolsVisible, setToolsVisible] = useState(false);
   const [toolsMenu, setToolsMenu] = useState(false);
   const statusListener = useRef(onStatus);
   useLayoutEffect(() => { statusListener.current = onStatus; }, [onStatus]);
@@ -113,6 +113,7 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
       current!.resize();
     }
     bindTerminalTouch(current.term, screen.current!, handles.current!, font, () => openKeyboard(current), toggleToolbar, signal);
+    bindToolbarShortcut(scope, toggleToolbar, signal);
     bindViewport(scope, button('fullscreen'), current, report, signal);
     bindBell(current.term, scope, signal);
     bindButtonHints(keys, report, signal);
@@ -156,7 +157,7 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   const closed = connection === 'closed';
   return <div className="terminal-frame" hidden={!visible}>
     <div className="terminal-statusbar">
-      <span className="terminal-state" data-state={connection} role="status">{status}</span>
+      <span className="terminal-state" data-state={connection} role="status" title="Double-tap Shift to toggle terminal keys">{status}</span>
       <button id="disconnect" aria-label={closed ? 'New terminal' : 'Close terminal'}
         onClick={closed ? restart : () => session.current?.close()}>{closed ? 'New terminal' : 'Close terminal'}</button>
     </div>
@@ -173,9 +174,9 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
         <div className="terminal-keys" hidden={nativePaste || toolsMenu} aria-label="Input keys">
           <button disabled={!online} data-key="Escape" data-hint="Send Escape." onClick={() => keyPress('Escape')}>Esc</button>
           <button disabled={!online} id="tab" data-hint="Send Tab. Use Shift for reverse Tab." onClick={event => keyPress('Tab', event.shiftKey)}>Tab</button>
-          <button disabled={!online} id="arrow-pad" aria-label="Arrow keys: drag in any direction, hold first for Shift">✥</button>
+          <button disabled={!online} id="arrow-pad" aria-label="Arrow keys: drag in any direction">✥</button>
           {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} id={name} disabled={!online} aria-pressed={modifiers[name]}
-            aria-label={name} data-hint={'Apply ' + name + ' to the next key. Tap again to cancel.'}
+            aria-label={name} data-hint={'Keep ' + name + ' on for toolbar keys. Typing releases it.'}
             onClick={() => { session.current?.modifier(name); session.current?.term.focus(); }}>{name === 'ctrl' ? 'Ctrl' : name === 'alt' ? 'Alt' : '⇧'}</button>)}
           <button className="terminal-menu-switch" id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu(true)}>☰</button>
         </div>
@@ -188,7 +189,7 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
           <button className="terminal-menu-switch" id="terminal-input" aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu(false)}>⌨</button>
         </div>
         {visible && nativePaste && online && <PasteField dismiss={dismissPaste} send={text => {
-          if (session.current?.online()) session.current.term.paste(text);
+          if (session.current?.online()) session.current.paste(text);
           dismissPaste();
         }}/>}
       </div>

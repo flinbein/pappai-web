@@ -58,12 +58,19 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
   }
   function key(value: string, special = true, shift = false) {
     const data = encodeKey(value, modifiers, term.modes.applicationCursorKeysMode, special, shift);
-    clearModifiers();
     send(encoder.encode(data));
+  }
+  let pasting = false;
+  function paste(text: string) {
+    pasting = true;
+    try { term.paste(text); } finally { pasting = false; }
   }
   term.onData(data => {
     // A mobile IME can commit a letter without a keydown. Keep terminal replies intact.
-    if ((modifiers.ctrl || modifiers.alt || modifiers.shift) && data && !data.startsWith(escape)) key(data, false);
+    if (!pasting && (modifiers.ctrl || modifiers.alt || modifiers.shift) && data && !data.startsWith(escape)) {
+      key(data, false);
+      clearModifiers();
+    }
     else send(encoder.encode(data));
   });
   term.onBinary(data => send(Uint8Array.from(data, ch => ch.charCodeAt(0))));
@@ -73,14 +80,17 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
     if (event.ctrlKey && event.shiftKey && ['KeyC', 'KeyV'].includes(event.code)) {
       event.preventDefault();
       if (event.code === 'KeyC') events.copy();
-      else if (online()) events.paste();
+      else if (online()) { clearModifiers(); events.paste(); }
       return false;
     }
     if ((modifiers.ctrl || modifiers.alt || modifiers.shift) && isSpecialKey(event.key)) {
       event.preventDefault();
       key(event.key, true, event.shiftKey);
+      clearModifiers();
       return false;
     }
+    // xterm encodes these keys as escape sequences distinct from printable IME input.
+    if (/^F\d+$/.test(event.key) || ['Delete', 'Insert'].includes(event.key)) clearModifiers();
     return true;
   });
   const observer = new ResizeObserver(resize);
@@ -104,6 +114,8 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
   };
   socket.onclose = event => {
     term.options.disableStdin = true;
+    term.options.cursorBlink = false;
+    term.write('\x1b[?25l'); // Hide the cursor after the last queued PTY output.
     clearModifiers();
     const ended = localClose || event.code === 1000;
     const lost = opened ? 'Соединение потеряно' : 'Соединение недоступно. Проверьте вход в панель.';
@@ -115,7 +127,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
   }
   window.addEventListener('pagehide', close);
   return {
-    term, resize, key, close, online, visible, clearModifiers,
+    term, resize, key, paste, close, online, visible,
     modifier(name: keyof Modifiers) { setModifiers({...modifiers, [name]: !modifiers[name]}); },
     dispose() {
       window.removeEventListener('pagehide', close);

@@ -3,9 +3,9 @@ import {Terminal} from '@xterm/xterm';
 import {encodeKey, escape, isSpecialKey, noModifiers, type Modifiers} from './keys';
 
 type SessionEvents = {
-  opened(): void;
-  mode(sandboxed: boolean): void;
-  closed(reason: string): void;
+  started(sandboxed: boolean, program?: string): void;
+  title(value: string): void;
+  closed(reason: string, launchFailed: boolean): void;
   modifiers(value: Modifiers): void;
   copy(): void;
   paste(): void;
@@ -13,7 +13,7 @@ type SessionEvents = {
 
 export const defaultFontSize = 16;
 
-export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boolean, events: SessionEvents) {
+export function openTerminal(screen: HTMLElement, fontSize: number, command: string, sandbox: boolean, events: SessionEvents) {
   const term = new Terminal({
     cursorBlink: true, fontSize, fontFamily: 'monospace', scrollback: 3000,
     theme: {background: '#12191b', foreground: '#e5eeec', selectionBackground: '#387466'},
@@ -23,17 +23,18 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
   term.open(screen);
   const url = new URL('/api/ws/terminal', location.href);
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  if (sandbox) url.search = 'sandbox=1';
+  url.searchParams.set('start', 'manual');
+  if (sandbox) url.searchParams.set('sandbox', '1');
   const socket = new WebSocket(url);
   socket.binaryType = 'arraybuffer';
   const encoder = new TextEncoder();
   let modifiers = noModifiers;
   let issue = '';
   let lastSize = '';
-  let opened = false;
-  let localClose = false;
+  let started = false;
+  let finished = false;
 
-  const online = () => socket.readyState === WebSocket.OPEN;
+  const online = () => started && !finished && socket.readyState === WebSocket.OPEN;
   const visible = () => screen.clientWidth > 0 && screen.clientHeight > 0;
   function resize() {
     if (!visible()) return;
@@ -74,6 +75,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
     else send(encoder.encode(data));
   });
   term.onBinary(data => send(Uint8Array.from(data, ch => ch.charCodeAt(0))));
+  term.onTitleChange(events.title);
   screen.addEventListener('paste', clearModifiers, true);
   term.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown') return true;
@@ -97,37 +99,49 @@ export function openTerminal(screen: HTMLElement, fontSize: number, sandbox: boo
   observer.observe(screen);
   resize();
   socket.onopen = () => {
-    opened = true;
-    events.opened();
-    resize();
+    const dimensions = {cols: term.cols, rows: term.rows};
+    lastSize = JSON.stringify(dimensions);
+    socket.send(JSON.stringify({command, ...dimensions}));
   };
-  socket.onmessage = ({data}: MessageEvent<unknown>) => {
-    if (data instanceof ArrayBuffer) {
-      term.write(new Uint8Array(data), () => {
-        if (online()) socket.send(JSON.stringify({rendered: data.byteLength}));
-      });
-    } else if (typeof data === 'string') {
-      const info: {error?: string; sandboxed?: boolean} = JSON.parse(data);
-      if (info.error) issue = info.error;
-      else events.mode(Boolean(info.sandboxed));
-    }
-  };
-  socket.onclose = event => {
+  function finish(reason: string, launchFailed = false) {
+    if (finished) return;
+    finished = true;
     term.options.disableStdin = true;
     term.options.cursorBlink = false;
     term.write('\x1b[?25l'); // Hide the cursor after the last queued PTY output.
     clearModifiers();
-    const ended = localClose || event.code === 1000;
-    const lost = opened ? 'Соединение потеряно' : 'Соединение недоступно. Проверьте вход в панель.';
-    events.closed(issue || (ended ? 'Сеанс завершён' : lost));
+    events.closed(reason, launchFailed);
+  }
+  socket.onmessage = ({data}: MessageEvent<unknown>) => {
+    if (data instanceof ArrayBuffer) {
+      term.write(new Uint8Array(data), () => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({rendered: data.byteLength}));
+      });
+    } else if (typeof data === 'string') {
+      const info = JSON.parse(data);
+      if (info.startFailed === true && !started) {
+        finish(info.error || 'Не удалось запустить терминал', true);
+      } else if (info.started === true && !started && !finished) {
+        started = true;
+        resize();
+        events.started(info.sandboxed === true, info.program);
+      } else if (typeof info.exitCode === 'number') {
+        finish('Сеанс завершён · код ' + info.exitCode);
+      } else if (typeof info.error === 'string') {
+        issue = info.error;
+      }
+    }
+  };
+  socket.onclose = event => {
+    const lost = started ? 'Соединение потеряно' : 'Соединение недоступно. Проверьте вход в панель.';
+    finish(issue || (event.code === 1000 && started ? 'Сеанс завершён' : lost));
   };
   function close() {
-    localClose = true;
     socket.close();
   }
   window.addEventListener('pagehide', close);
   return {
-    term, resize, key, paste, close, online, visible,
+    term, resize, key, paste, online, visible,
     modifier(name: keyof Modifiers) { setModifiers({...modifiers, [name]: !modifiers[name]}); },
     dispose() {
       window.removeEventListener('pagehide', close);

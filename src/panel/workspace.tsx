@@ -9,7 +9,7 @@ import { Runners } from './runners';
 import { snapshotReader } from './refresh-snapshot';
 import { usePappaiEvent } from './use-pappai-event';
 
-const TerminalView = lazy(() => import('../terminal/view'));
+const TerminalTabs = lazy(() => import('../terminal/tabs'));
 type Pane = 'tree' | 'node' | 'action';
 const narrowScreen = matchMedia('(max-width: 45rem)');
 function subscribeWidth(notify: () => void) {
@@ -91,8 +91,8 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const action = match ? location.pathname.split('/').slice(3).join('/').replace(/\/$/, '') : '';
   const terminalRoute = location.pathname === '/terminal';
   const requestedSandbox = new URLSearchParams(location.search).get('sandbox') === '1';
-  const [terminalMode, setTerminalMode] = useState<boolean | null>(terminalRoute ? requestedSandbox : null);
-  const [terminalState, setTerminalState] = useState<'connecting' | 'online' | 'closed'>('connecting');
+  const [terminalVisited, setTerminalVisited] = useState(terminalRoute);
+  const [live, setLive] = useState(false);
   const [view, setView] = useState<{key: string; pane: Pane}>();
   const narrow = useSyncExternalStore(subscribeWidth, () => narrowScreen.matches);
   const defaultPane = action ? 'action' : location.pathname === '/' ? 'tree' : 'node';
@@ -104,18 +104,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const showPane = (next: Pane) => setView({ key: location.key, pane: next });
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (menu.current) menu.current.open = false; }, [location.key]);
-  useEffect(() => {
-    if (terminalRoute && terminalMode === null) {
-      setTerminalMode(requestedSandbox);
-      setTerminalState('connecting');
-    }
-  }, [terminalRoute, terminalMode, requestedSandbox]);
-  function startInMode(sandbox: boolean) {
-    if (terminalMode !== sandbox && (terminalMode === null || terminalState === 'closed')) {
-      setTerminalMode(sandbox);
-      setTerminalState('connecting');
-    }
-  }
+  useEffect(() => { if (terminalRoute) setTerminalVisited(true); }, [terminalRoute]);
   const [folded, setFolded] = useState(new Set<string>());
   const [replies, setReplies] = useState<Record<string, Reply>>({});
   const directory = useRef<DirectoryNode[]>([]);
@@ -188,9 +177,6 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const consoleRoute = location.pathname === '/rpc';
   const nodeRoute = !!match || location.pathname === '/';
   const title = terminalRoute ? 'Терминал' : runners ? 'Раннеры' : consoleRoute ? 'Консоль RPC' : selectedNode?.name ?? selected;
-  const terminalLink = terminalMode ? '/terminal?sandbox=1' : '/terminal';
-  const showTerminal = terminalRoute && terminalMode === requestedSandbox;
-  const live = terminalState === 'online';
   return <div id="workspace" data-pane={pane} data-action={Boolean(action && selectedNode)}>
     <nav ref={breadcrumbs} className="breadcrumbs" aria-label="Колонки">
       <button aria-current={pane === 'tree' ? 'step' : undefined} onClick={() => showPane('tree')}>Workspace</button>
@@ -206,10 +192,6 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
         <div className="account-items">
           {session.canManageApps && <Link id="nav-runners" to="/runners">Раннеры</Link>}
           <Link id="nav-rpc" to="/rpc">Консоль RPC</Link>
-          {session.canChooseSandbox && (terminalState === 'closed' || terminalMode === null) &&
-            <Link id="isolated-terminal" to="/terminal?sandbox=1" onClick={() => startInMode(true)}>Открыть в песочнице</Link>}
-          {session.canChooseSandbox && terminalMode === true && terminalState === 'closed' &&
-            <Link to="/terminal" onClick={() => startInMode(false)}>Открыть без песочницы</Link>}
           <Action id="logout" feedback={feedback} run={signOut}>Выйти</Action>
         </div>
       </details>
@@ -224,7 +206,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
       {creationNotice && <p role="status">{creationNotice}</p>}
       <nav className="tools" aria-label="Инструменты">
         <a href="/files/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z"/></svg>Файлы</a>
-        <Link id="nav-terminal" to={terminalLink} aria-current={terminalRoute ? 'page' : undefined}
+        <Link id="nav-terminal" to="/terminal" aria-current={terminalRoute ? 'page' : undefined}
           onClick={() => showPane('node')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 3 3-3 3m5 0h5"/></svg>Терминал
           {live && <i className="online-dot" aria-label="Подключён" />}</Link>
       </nav>
@@ -240,15 +222,9 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
     {runners && <section id="runner-panel" className="node-column">{session.canManageApps
       ? <Runners feedback={feedback} /> : <p>Нет доступа.</p>}</section>}
     {consoleRoute && <section id="rpc-panel" className="node-column"><Console refresh={refresh} feedback={feedback} /></section>}
-    {terminalRoute && terminalMode !== null && !showTerminal && <section className="node-column">
-      <h1>Терминал</h1>{terminalState === 'closed'
-        ? <button onClick={() => startInMode(requestedSandbox)}>Открыть новый терминал</button>
-        : <p>Во вкладке уже открыт терминал с другим режимом изоляции. Закройте его перед сменой режима.</p>}
-      <Link to={terminalLink}>Перейти к текущему терминалу</Link>
-    </section>}
-    {terminalMode !== null && <section className="terminal-column" hidden={!showTerminal}>
-      <Suspense fallback={<p>Подключение…</p>}><TerminalView key={String(terminalMode)} sandbox={terminalMode}
-        visible={showTerminal && (!narrow || pane === 'node')} onStatus={setTerminalState} /></Suspense>
+    {(terminalVisited || terminalRoute) && <section className="terminal-column" hidden={!terminalRoute}>
+      <Suspense fallback={<p>Загрузка…</p>}><TerminalTabs defaultSandbox={requestedSandbox} canChooseSandbox={session.canChooseSandbox}
+        visible={terminalRoute && (!narrow || pane === 'node')} onOnlineChange={setLive} /></Suspense>
     </section>}
     {!nodeRoute && !terminalRoute && !runners && !consoleRoute && <section className="node-column"><p>Страница не найдена.</p><Link to="/">Workspace</Link></section>}
   </div>;

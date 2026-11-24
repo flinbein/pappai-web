@@ -9,12 +9,16 @@ import {defaultFontSize, openTerminal, type TerminalSession} from './session';
 import {bindDirectionPad, bindButtonHints, bindToolbarShortcut} from './toolbar';
 import {bindTerminalTouch} from './touch';
 import {bindViewport, openKeyboard} from './viewport';
+import type {TerminalState, TerminalUpdate} from './tabs';
 
-export type TerminalStatus = 'connecting' | 'online' | 'closed';
 interface TerminalProps {
+  id: number;
+  command: string;
   visible: boolean;
   sandbox: boolean;
-  onStatus(state: TerminalStatus): void;
+  connection: TerminalState;
+  status: string;
+  update(id: number, change: TerminalUpdate): void;
 }
 
 function savedFontSize() {
@@ -25,15 +29,7 @@ function savedFontSize() {
   return defaultFontSize;
 }
 
-export default function TerminalView(props: TerminalProps) {
-  const [started, setStarted] = useState(props.visible);
-  const [generation, setGeneration] = useState(0);
-  useLayoutEffect(() => { if (props.visible) setStarted(true); }, [props.visible]);
-  if (!started) return null;
-  return <TerminalInstance key={generation} {...props} restart={() => setGeneration(n => n + 1)}/>;
-}
-
-function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps & {restart(): void}) {
+export function TerminalView({id, command, visible, sandbox, connection, status, update}: TerminalProps) {
   const root = useRef<HTMLDivElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -42,8 +38,6 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   const notice = useRef<HTMLSpanElement>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
   const session = useRef<TerminalSession | null>(null);
-  const [connection, setConnection] = useState<TerminalStatus>('connecting');
-  const [status, setStatus] = useState('Подключение…');
   const [modifiers, setModifiers] = useState(noModifiers);
   const [toolsVisible, setToolsVisible] = useState(false);
   const [menu, setMenu] = useState<'input' | 'tools' | 'function'>('input');
@@ -73,8 +67,6 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
       void lock?.release();
     };
   }, [visible, connection]);
-  const statusListener = useRef(onStatus);
-  useLayoutEffect(() => { statusListener.current = onStatus; }, [onStatus]);
   const report = useCallback((text: string, anchor?: HTMLElement) => {
     const label = notice.current, keys = toolbar.current;
     if (!label || !keys) return;
@@ -92,37 +84,32 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
   const {copy, paste, copyView, setCopyView, nativePaste, setNativePaste} = useTerminalClipboard(session, report);
 
   useLayoutEffect(() => {
-    const current = openTerminal(host.current!, savedFontSize(), sandbox, {
-      opened() {
-        setConnection('online');
-        statusListener.current('online');
+    const current = openTerminal(host.current!, savedFontSize(), command, sandbox, {
+      started(sandboxed, program) {
+        const name = program?.split('/').pop();
+        update(id, {state: 'online', detail: sandboxed ? 'В песочнице' : 'Без песочницы', ...(name && {program: name})});
         if (current.visible() && !matchMedia('(pointer: coarse)').matches) current.term.focus();
       },
-      mode: sandboxed => setStatus(sandboxed ? 'В песочнице' : 'Без песочницы'),
-      closed(reason) {
-        setConnection('closed');
-        setStatus(reason);
+      title(value) { update(id, {title: value.trim().slice(0, 256)}); },
+      closed(reason, launchFailed) {
+        update(id, {state: launchFailed ? 'failed' : 'closed', detail: reason});
         setNativePaste(false);
-        statusListener.current('closed');
       },
       modifiers: setModifiers, copy, paste,
     });
     session.current = current;
-    setConnection('connecting');
-    setStatus('Подключение…');
-    statusListener.current('connecting');
     return () => {
       clearTimeout(noticeTimer.current);
       session.current = null;
       current.dispose();
     };
-  }, [sandbox, copy, paste, setNativePaste]);
+  }, [id, command, sandbox, update, copy, paste, setNativePaste]);
 
   useLayoutEffect(() => {
     const current = session.current;
     if (!visible || !current) return;
     const scope = root.current!, keys = toolbar.current!;
-    const button = (id: string) => keys.querySelector<HTMLButtonElement>('#' + id)!;
+    const button = (name: string) => keys.querySelector<HTMLButtonElement>(`[data-control="${name}"]`)!;
     const bindings = new AbortController();
     const {signal} = bindings;
     function key(value: string, shift = false) {
@@ -146,7 +133,10 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
     bindDirectionPad(button('arrow-pad'), 'arrows', signal, key, report);
     bindDirectionPad(button('nav-pad'), 'nav', signal, key, report);
     current.resize();
-    if (current.online() && !matchMedia('(pointer: coarse)').matches) current.term.focus();
+    if (!matchMedia('(pointer: coarse)').matches) {
+      if (current.online()) current.term.focus();
+      else scope.focus({preventScroll: true});
+    }
     return () => {
       bindings.abort();
       setCopyView(null);
@@ -181,15 +171,14 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
     setMenu(next);
   }
   const online = connection === 'online';
-  const closed = connection === 'closed';
-  return <div className="terminal-frame" hidden={!visible}>
+  const control = (name: string) => ({id: visible ? name : undefined, 'data-control': name});
+  return <div className="terminal-frame" hidden={!visible} id={'terminal-panel-' + id}
+    role="tabpanel" aria-labelledby={'terminal-tab-' + id}>
     <div className="terminal-statusbar">
       <span className="terminal-state" data-state={connection} role="status" title="Double-tap Shift to toggle terminal keys">{status}</span>
-      <button id="disconnect" aria-label={closed ? 'New terminal' : 'Close terminal'}
-        onClick={closed ? restart : () => session.current?.close()}>{closed ? 'New terminal' : 'Close terminal'}</button>
     </div>
     <div ref={root} className="terminal-view" tabIndex={-1} aria-label="Terminal">
-      <div ref={screen} id="screen" className="terminal-screen" aria-label="Container terminal">
+      <div ref={screen} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
         <div ref={host} className="terminal-host"/>
       </div>
       <div ref={handles} className="terminal-handles">
@@ -201,17 +190,17 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
         <div className="terminal-key-row" role="group" hidden={nativePaste || menu !== 'input'} aria-label="Input keys">
           <div className="terminal-keys">
             <button disabled={!online} data-key="Escape" data-hint="Send Escape." onClick={() => keyPress('Escape')}>Esc</button>
-            <button disabled={!online} id="tab" data-hint="Send Tab. Use Shift for reverse Tab." onClick={event => keyPress('Tab', event.shiftKey)}>Tab</button>
-            <button disabled={!online} id="arrow-pad" aria-label="Arrow keys: drag in any direction">✥</button>
-            {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} id={name} disabled={!online} aria-pressed={modifiers[name]}
+            <button disabled={!online} {...control('tab')} data-hint="Send Tab. Use Shift for reverse Tab." onClick={event => keyPress('Tab', event.shiftKey)}>Tab</button>
+            <button disabled={!online} {...control('arrow-pad')} aria-label="Arrow keys: drag in any direction">✥</button>
+            {(['ctrl', 'alt', 'shift'] as const).map(name => <button key={name} {...control(name)} disabled={!online} aria-pressed={modifiers[name]}
               aria-label={name} data-hint={'Keep ' + name + ' on for toolbar keys. Typing releases it.'}
               onClick={() => { session.current?.modifier(name); session.current?.term.focus(); }}>{name === 'ctrl' ? 'Ctrl' : name === 'alt' ? 'Alt' : '⇧'}</button>)}
-            <button disabled={!online} id="nav-pad" aria-label="Navigation keys: drag for PgUp, PgDown, Home or End">Nav</button>
+            <button disabled={!online} {...control('nav-pad')} aria-label="Navigation keys: drag for PgUp, PgDown, Home or End">Nav</button>
             <button disabled={!online} data-hint="Show function keys F1–F12." onClick={() => switchMenu('function')}>Fn</button>
             <button disabled={!online} data-hint="Send Insert." onClick={() => keyPress('Insert')}>Ins</button>
             <button disabled={!online} data-hint="Send Delete." onClick={() => keyPress('Delete')}>Del</button>
           </div>
-          <button id="terminal-tools" aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu('tools')}>☰</button>
+          <button {...control('terminal-tools')} aria-label="More terminal tools" data-hint="Show clipboard, font and fullscreen controls." onClick={() => switchMenu('tools')}>☰</button>
         </div>
         {menu === 'function' && !nativePaste && <div className="terminal-key-row" role="group" aria-label="Function keys">
           <div className="terminal-keys">
@@ -222,13 +211,13 @@ function TerminalInstance({visible, sandbox, onStatus, restart}: TerminalProps &
         </div>}
         <div className="terminal-key-row" role="group" hidden={nativePaste || menu !== 'tools'} aria-label="Terminal tools">
           <div className="terminal-keys">
-            <button id="copy" data-hint="Copy selected text or choose from scrollback." onClick={copy}>Copy</button>
-            <button id="paste" disabled={!online} data-hint="Paste text from the clipboard." onClick={paste}>Paste</button>
-            <button id="font-up" aria-label="Increase font size" data-hint="Increase the font size." onClick={() => stepFont(1)}>A+</button>
-            <button id="font-down" aria-label="Decrease font size" data-hint="Decrease the font size." onClick={() => stepFont(-1)}>A−</button>
-            <button id="fullscreen" hidden={!document.fullscreenEnabled} aria-label="Enter fullscreen" data-hint="">⛶</button>
+            <button {...control('copy')} data-hint="Copy selected text or choose from scrollback." onClick={copy}>Copy</button>
+            <button {...control('paste')} disabled={!online} data-hint="Paste text from the clipboard." onClick={paste}>Paste</button>
+            <button {...control('font-up')} aria-label="Increase font size" data-hint="Increase the font size." onClick={() => stepFont(1)}>A+</button>
+            <button {...control('font-down')} aria-label="Decrease font size" data-hint="Decrease the font size." onClick={() => stepFont(-1)}>A−</button>
+            <button {...control('fullscreen')} hidden={!document.fullscreenEnabled} aria-label="Enter fullscreen" data-hint="">⛶</button>
           </div>
-          <button id="terminal-input" aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>⌨</button>
+          <button {...control('terminal-input')} aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>⌨</button>
         </div>
         {visible && nativePaste && online && <PasteField dismiss={dismissPaste} send={text => {
           if (session.current?.online()) session.current.paste(text);

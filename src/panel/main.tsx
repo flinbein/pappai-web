@@ -10,26 +10,26 @@ import './style.css';
 
 function SignIn({ reload, feedback }: { reload: () => Promise<void>; feedback: Feedback }) {
   return <section id="signin">
-    <h1>Вход в workspace</h1>
-    <Action id="login" feedback={feedback} run={async () => { await login(); await reload(); }}>Войти с passkey</Action>
-    <details><summary>Зарегистрировать passkey</summary>
+    <h1>Sign in to your workspace</h1>
+    <Action id="login" feedback={feedback} run={async () => { await login(); await reload(); }}>Sign in with a passkey</Action>
+    <details><summary>Register a passkey</summary>
       <Form id="activate" feedback={feedback} submit={async form => {
         await register(field(form, 'email'), field(form, 'code'));
         form.reset();
         await reload();
       }}>
         <label>Email<input name="email" type="email" autoComplete="email" required /></label>
-        <label>Одноразовый код<input name="code" autoComplete="one-time-code" required /></label>
-        <Submit>Зарегистрировать</Submit>
+        <label>One-time code<input name="code" autoComplete="one-time-code" required /></label>
+        <Submit>Register</Submit>
       </Form>
     </details>
-    <details><summary>Получить код по email</summary>
+    <details><summary>Get a code by email</summary>
       <Form id="recovery" feedback={feedback} submit={async form => {
         await recover(field(form, 'email'));
-        feedback('Если восстановление доступно, код придёт на указанный адрес.');
+        feedback('If recovery is available, you’ll receive a code at that email address.');
       }}>
-        <label>Адрес для восстановления<input name="email" type="email" autoComplete="email" required /></label>
-        <Submit>Запросить код</Submit>
+        <label>Recovery email address<input name="email" type="email" autoComplete="email" required /></label>
+        <Submit>Request code</Submit>
       </Form>
     </details>
   </section>;
@@ -48,7 +48,7 @@ function Panel() {
         revision.current++;
         stopPanelConnection();
         setSession({ user: null, canChooseSandbox: false, canManageApps: false });
-        setNotice('Сессия завершена. Войдите снова.');
+        setNotice('Your session has ended. Sign in again.');
       });
     } else {
       stopPanelConnection();

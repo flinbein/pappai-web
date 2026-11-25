@@ -33,33 +33,33 @@ export function Profile({ id, nodes, canImport, onStatus, feedback }: Props) {
     if (mounted.current) await readProfile();
   }
 
-  return <section id="profile-controls"><h2>Настройка профиля</h2>
+  return <section id="profile-controls"><h2>Profile settings</h2>
     <Form id="profile-import" hidden={!canImport} feedback={setResult} submit={async form => {
       await call(id, 'codex.setup', { authFile: field(form, 'authFile') });
-      setResult('Авторизация импортирована.');
+      setResult('Codex credentials imported.');
     }}>
-      <label>Путь к auth.json на сервере<input id="auth-file" name="authFile" placeholder="/tmp/codex-auth.json" required /></label>
-      <Submit>Импортировать авторизацию Codex</Submit>
+      <label>Path to auth.json on the server<input id="auth-file" name="authFile" placeholder="/tmp/codex-auth.json" required /></label>
+      <Submit>Import Codex credentials</Submit>
     </Form>
     <Form id="profile-scope" feedback={setResult} submit={async () => {
       const value = parseJSON(scope);
-      if (!Array.isArray(value)) throw new Error('Область доступа должна быть массивом.');
+      if (!Array.isArray(value)) throw new Error('The access scope must be a JSON array.');
       if (app && !value.includes(app)) value.push(app);
       await call(id, '$.profile.scope.set', { scope: value });
       setScope(formatJSON(value));
       setApp('');
-      setResult('Область доступа сохранена.');
+      setResult('Access scope saved.');
     }}>
-      <label>Область доступа (JSON)<textarea id="scope" rows={3} required spellCheck={false}
+      <label>Access scope (JSON)<textarea id="scope" rows={3} required spellCheck={false}
         disabled={!status} value={scope} onChange={event => setScope(event.target.value)} /></label>
-      <label>Добавить APP в конец списка<select id="scope-app" value={app} onChange={event => setApp(event.target.value)}>
-        <NodeOptions nodes={nodes} type="app" placeholder="Не добавлять" />
+      <label>Append an APP to the access scope<select id="scope-app" value={app} onChange={event => setApp(event.target.value)}>
+        <NodeOptions nodes={nodes} type="app" placeholder="None" />
       </select></label>
-      <Submit disabled={!status}>Сохранить область доступа</Submit>
+      <Submit disabled={!status}>Save access scope</Submit>
     </Form>
     <div className="app-actions">
-      <Action id="enable-profile" feedback={setResult} disabled={!status || status === 'working'} run={() => manage('enable')}>Включить профиль</Action>
-      <Action id="disable-profile" className="secondary" feedback={setResult} disabled={status !== 'working'} run={() => manage('disable')}>Отключить профиль</Action>
+      <Action id="enable-profile" feedback={setResult} disabled={!status || status === 'working'} run={() => manage('enable')}>Enable profile</Action>
+      <Action id="disable-profile" className="secondary" feedback={setResult} disabled={status !== 'working'} run={() => manage('disable')}>Disable profile</Action>
     </div>
     <p id="profile-result" role="status">{result}</p>
   </section>;

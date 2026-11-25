@@ -26,7 +26,7 @@ const codexManifest = {
 };
 
 export const choices = [
-  ['team', 'TEAM'], ['profile', 'PROFILE'], ['codex', 'APP · Codex'], ['app', 'APP · свой манифест'], ['user', 'USER'],
+  ['team', 'TEAM'], ['profile', 'PROFILE'], ['codex', 'APP · Codex'], ['app', 'APP · Custom manifest'], ['user', 'USER'],
 ] as const;
 type Choice = typeof choices[number][0];
 
@@ -69,18 +69,18 @@ export function CreateNode({ parent, nodes, admin, catalog, type, chooseType, cl
     setCreated(true);
     await refresh(result.id);
   }}>
-    <h2>Создать ноду</h2><p id="parent-name">Родитель: {parent.name}</p>
-    <label>Тип ноды<select id="create-type" value={type} onChange={event => chooseType(event.target.value as Choice)}>
+    <h2>Create node</h2><p id="parent-name">Parent: {parent.name}</p>
+    <label>Node type<select id="create-type" value={type} onChange={event => chooseType(event.target.value as Choice)}>
       {choices.map(([value, label]) => <option key={value} value={value} disabled={!canCreate(value, catalog, admin)}>{label}</option>)}
     </select></label>
-    <label>Название<input id="create-name" name="name" maxLength={255} required /></label>
-    <label id="email-field" hidden={type !== 'user'}>Email пользователя<input id="create-email" name="email" type="email" disabled={type !== 'user'} required={type === 'user'} /></label>
-    <label id="profile-field" hidden={!app}>Профиль авторизации<select id="create-profile" name="profile" required={type === 'codex'}>
-      <NodeOptions nodes={nodes} type="profile" placeholder="Выберите профиль" />
+    <label>Name<input id="create-name" name="name" maxLength={255} required /></label>
+    <label id="email-field" hidden={type !== 'user'}>User email<input id="create-email" name="email" type="email" disabled={type !== 'user'} required={type === 'user'} /></label>
+    <label id="profile-field" hidden={!app}>Authentication profile<select id="create-profile" name="profile" required={type === 'codex'}>
+      <NodeOptions nodes={nodes} type="profile" placeholder="Select a profile" />
     </select></label>
-    <label id="source-field" hidden={type !== 'app'}>Источник манифеста (JSON)<textarea id="create-source" name="source" rows={7} spellCheck={false} required={type === 'app'} /></label>
-    <details><summary>Права ноды</summary><label>Правила (JSON)<textarea id="create-permissions" name="permissions" rows={3} spellCheck={false} defaultValue="[]" /></label></details>
-    <p id="create-error" role="alert">{error || (missingProfile ? 'Сначала создайте PROFILE для авторизации Codex.' : '')}</p>
-    <div className="app-actions"><Submit disabled={created || missingProfile}>Создать</Submit><button className="secondary" type="button" data-close onClick={close}>Отмена</button></div>
+    <label id="source-field" hidden={type !== 'app'}>Manifest source (JSON)<textarea id="create-source" name="source" rows={7} spellCheck={false} required={type === 'app'} /></label>
+    <details><summary>Node permissions</summary><label>Rules (JSON)<textarea id="create-permissions" name="permissions" rows={3} spellCheck={false} defaultValue="[]" /></label></details>
+    <p id="create-error" role="alert">{error || (missingProfile ? 'Create a PROFILE first to authenticate Codex.' : '')}</p>
+    <div className="app-actions"><Submit disabled={created || missingProfile}>Create</Submit><button className="secondary" type="button" data-close onClick={close}>Cancel</button></div>
   </Form>;
 }

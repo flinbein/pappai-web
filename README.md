@@ -2,7 +2,9 @@
 
 The workspace panel and interactive terminal for [pappai](https://github.com/flinbein/pappai). The panel uses WebAuthn, the controller's session and JSON RPC. React Router opens a node summary at `/nodes/:id` and its method form at `/nodes/:id/methods/:name`. On a phone, the breadcrumbs switch visible columns in place, preserving the URL, form and result. Files open in the controller's file browser.
 
-Open `/terminal` and use **+** to launch a command (default `/bin/sh -i`). Each terminal tab owns one WebSocket and PTY. Tabs show the program title. Hover over the status dot for the launch state or exit code. A startup error appears in the tab in place of the terminal. Navigating between tabs and workspace panes preserves running programs and scrollback. A program that exits leaves its output available until its terminal tab is removed. Reloading the page or signing out ends its terminal connections.
+Open `/terminal` and use **+** to launch a command (default `/bin/sh -i`). Each terminal tab owns one WebSocket and PTY. Tabs show the program title. Hover over the status icon for the launch state or exit code. A startup error appears in the tab in place of the terminal. Navigating between tabs and workspace panes preserves running programs and scrollback. A program that exits leaves its output available until its terminal tab is removed. Reloading the page or signing out ends its terminal connections.
+
+Choose a terminal theme when launching a tab or change it live with the palette button. Swipe between tabs and the launch form with two fingers. Use Ctrl+Shift+C to copy a selection or open a selectable scrollback snapshot. The package includes 12 local palettes and their [source notices](public/terminal-theme-notices.txt).
 
 ## Development
 

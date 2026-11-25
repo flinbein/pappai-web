@@ -3,36 +3,68 @@
   color: #e5eeec; background: #12191b; color-scheme: dark;
 }
 .terminal-tabs {
-  display: flex; align-items: stretch; flex: none; min-width: 0; padding: 2px 4px 0;
-  border-bottom: 1px solid #455a59; background: #203033;
-  overflow-x: auto; scrollbar-width: thin;
+  --tab-curve: 8px;
+  --tab-stroke: 2px;
+  --tab-outline: #82939b;
+  display: flex; align-items: stretch; flex: none; min-width: 0; gap: 4px;
+  height: calc(2rem + 10px); padding: 4px var(--tab-curve) 0;
+  background: #203033; overflow-x: auto; scrollbar-width: none;
+  box-shadow: inset 0 calc(-1 * var(--tab-stroke)) var(--tab-outline);
+  scroll-padding-inline: var(--tab-curve);
 }
-.terminal-tab-group { display: flex; flex: none; align-items: center; border-bottom: 2px solid transparent; }
-.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true] {
-  border-bottom: 2px solid #a6d8c4; background: #12191b;
+.terminal-tab-group { display: flex; flex: none; align-items: center; }
+.terminal-tabs .terminal-tab-group, .terminal-tabs #new-terminal {
+  position: relative; margin-block: 1px 4px; border-radius: 8px;
+  border: var(--tab-stroke) solid transparent; border-bottom: 0;
 }
+.terminal-tabs :is(.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true]) {
+  z-index: 1; margin-block: 0; border-radius: 10px 10px 0 0;
+  border-color: var(--tab-outline);
+  background: var(--term-bg, #12191b);
+}
+/* Each foot joins the side stroke to the baseline at the same thickness. */
+.terminal-tabs :is(.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true])::before,
+.terminal-tabs :is(.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true])::after {
+  --foot: calc(var(--tab-curve) + var(--tab-stroke));
+  content: ''; position: absolute; bottom: 0; width: var(--foot); height: var(--foot);
+  pointer-events: none;
+  background: radial-gradient(circle at var(--corner) top,
+    transparent calc(var(--tab-curve) - .5px), var(--tab-outline) calc(var(--tab-curve) + .5px),
+    var(--tab-outline) calc(var(--foot) - .5px), var(--term-bg, #12191b) calc(var(--foot) + .5px));
+}
+.terminal-tabs :is(.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true])::before { right: 100%; --corner: left; }
+.terminal-tabs :is(.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true])::after { left: 100%; --corner: right; }
+.terminal-tabs .terminal-tab { border-radius: inherit; }
 .terminal-tabs button {
   display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
   min-height: 2rem; padding: 0 .45rem; border: 0; background: transparent;
   color: inherit; font: inherit; font-size: .85rem; cursor: pointer;
 }
 .terminal-tabs button:focus-visible { outline: 2px solid #b9dace; outline-offset: -3px; }
-.terminal-tabs button:hover { background: #304346; }
 .terminal-tab-title {
   max-width: clamp(5rem, 20vw, 13rem); overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   unicode-bidi: isolate;
 }
-.terminal-tab-dot { width: .5rem; height: .5rem; border-radius: 50%; background: #939c9c; flex: none; }
-.terminal-tab[data-state=online] .terminal-tab-dot { background: #48bc78; }
-.terminal-tab[data-state=connecting] .terminal-tab-dot { background: #e2ba48; }
-.terminal-tab[data-state=failed] .terminal-tab-dot { background: #ea706c; }
-.terminal-tab[data-state=nonzero] .terminal-tab-dot { background: #e99a50; }
+.terminal-tab-dot { position: relative; box-sizing: border-box; width: .6rem; height: .6rem; flex: none; }
+.terminal-tab[data-state=connecting] .terminal-tab-dot { border: 2px solid #e2ba48; border-radius: 50%; }
+.terminal-tab[data-state=online] .terminal-tab-dot { background: #48bc78; border-radius: 50%; }
+.terminal-tab[data-state=closed] .terminal-tab-dot { background: #939c9c; }
+.terminal-tab[data-state=nonzero] .terminal-tab-dot { background: #ea706c; }
+.terminal-tab[data-state=failed] .terminal-tab-dot::before,
+.terminal-tab[data-state=failed] .terminal-tab-dot::after {
+  content: ''; position: absolute; top: calc(50% - 1px); left: 0; width: 100%; height: 2px;
+  background: #ea706c; transform: rotate(45deg);
+}
+.terminal-tab[data-state=failed] .terminal-tab-dot::after { transform: rotate(-45deg); }
 .terminal-tabs .terminal-tab-close {
   width: 1.5rem; height: 1.5rem; min-height: 0; margin-inline-end: .2rem; padding: 0;
   border-radius: 50%; clip-path: circle(50%); color: #c0d0cf;
 }
-.terminal-tabs #new-terminal { flex: none; min-width: 2.25rem; border-left: 1px solid #455a59; font-size: 1.15rem; }
-#terminal-launch { display: grid; flex: 1; min-height: 0; overflow: auto; padding: 1rem; }
+.terminal-tabs #new-terminal { flex: none; min-width: 2.25rem; font-size: 1.15rem; }
+#terminal-launch { display: grid; flex: 0 0 100%; min-width: 0; min-height: 0; overflow: auto; padding: 1rem; touch-action: pan-y pinch-zoom; }
+/* Inactive slides keep their width even under the panel's global [hidden] rule. */
+.terminal-track > #terminal-launch[hidden] { display: grid !important; visibility: hidden; }
+.terminal-track[data-moving] > #terminal-launch[hidden] { visibility: visible; pointer-events: none; }
 #terminal-launch form { display: grid; gap: .7rem; width: min(100%, 23rem); margin: auto; }
 #terminal-command, #start-terminal { padding: .65rem .75rem; border-radius: .35rem; font: inherit; }
 #terminal-command { min-width: 0; border: 1px solid #607674; background: #1b282a; color: inherit; font-family: monospace; }
@@ -42,6 +74,18 @@
 #start-terminal:disabled { opacity: .5; cursor: default; }
 .terminal-frame { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .terminal-frame[hidden] { display: none; }
+.terminal-deck { flex: 1; min-height: 0; position: relative; overflow: clip; }
+.terminal-track { display: flex; width: 100%; height: 100%; }
+.terminal-track > .terminal-frame { flex: 0 0 100%; min-width: 0; }
+.terminal-workspace:fullscreen .terminal-track > .terminal-frame { contain: layout; }
+.terminal-track > .terminal-frame[hidden] { display: flex !important; visibility: hidden; }
+.terminal-track[data-moving] > .terminal-frame[hidden] { visibility: visible; pointer-events: none; }
+.terminal-track[data-glide] { transition: transform 190ms cubic-bezier(.22,.68,.2,1); }
+@media (prefers-reduced-motion: reduce) {
+  .terminal-track[data-glide] { transition: none; }
+}
+html:has(.terminal-deck) { overscroll-behavior-x: none; }
+.terminal-workspace:fullscreen .terminal-tabs { display: none; }
 .terminal-view {
   position: relative;
   display: flex;
@@ -53,27 +97,29 @@
   min-height: 0;
   overflow: hidden;
   padding-bottom: var(--terminal-ime, 0px);
-  color-scheme: dark;
-  background: #12191b;
-  color: #e5eeec;
+  --term-panel: color-mix(in srgb, var(--term-bg) 90%, var(--term-accent));
+  --term-key: color-mix(in srgb, var(--term-bg) 84%, var(--term-fg));
+  --term-edge: color-mix(in srgb, var(--term-bg) 65%, var(--term-fg));
+  background: var(--term-bg);
+  color: var(--term-fg);
   font: 16px system-ui, sans-serif;
 }
 .terminal-view:fullscreen { position: fixed; inset: 0; margin: 0; width: 100%; height: 100%; }
 @media (pointer: coarse) {
   /* Chrome pans fullscreen content to reveal the focused editor near an edge.
      Anchor the invisible input inside the visible area as the IME resizes it. */
-  .terminal-view:fullscreen .xterm-helper-textarea {
+  .terminal-view:fullscreen .xterm-helper-textarea, .terminal-workspace:fullscreen .xterm-helper-textarea {
     position: fixed !important;
     top: calc((100% - var(--terminal-ime, 0px)) * .4) !important;
     left: 40% !important;
   }
 }
-.terminal-view::backdrop { background: #12191b; }
+.terminal-view::backdrop { background: var(--term-bg); }
 .terminal-view[hidden], .terminal-view [hidden] { display: none !important; }
 .terminal-view button {
-  background: #293c40;
+  background: var(--term-key);
   color: inherit;
-  border: 1px solid #455b5b;
+  border: 1px solid var(--term-edge);
   border-radius: 4px;
   padding: 0 .55rem;
   font: inherit;
@@ -81,6 +127,7 @@
 }
 .terminal-view button:disabled { opacity: .5; cursor: default; }
 .terminal-launch-error { margin: 0; padding: .75rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-failed-frame { background: var(--term-bg); color: var(--term-fg); }
 .terminal-screen {
   flex: 1;
   min-width: 0;
@@ -97,9 +144,9 @@
   position: relative;
   flex: none;
   min-width: 0;
-  background: #203033;
+  background: var(--term-panel);
   padding: 2px max(4px, env(safe-area-inset-right)) max(2px, var(--terminal-safe, env(safe-area-inset-bottom))) max(4px, env(safe-area-inset-left));
-  border-top: 1px solid #48615d;
+  border-top: 1px solid var(--term-edge);
 }
 .terminal-keys {
   display: flex;
@@ -113,7 +160,7 @@
 .terminal-key-row { display: flex; align-items: center; gap: 3px; }
 .terminal-key-row .terminal-keys { flex: 1; min-width: 0; }
 .terminal-key-row button, .terminal-native-paste button { flex: none; white-space: nowrap; height: 36px; min-width: 44px; }
-.terminal-view .terminal-keys button[aria-pressed=true] { background: #b0e6d4; color: #13241f; }
+.terminal-view .terminal-keys button[aria-pressed=true] { background: var(--term-accent); color: var(--term-bg); }
 .terminal-key-row button { user-select: none; -webkit-touch-callout: none; }
 .terminal-keys :is(#arrow-pad, #nav-pad) { touch-action: none; cursor: move; }
 @media (max-width: 24rem) {
@@ -127,10 +174,15 @@
   max-width: calc(100% - 8px);
   border-radius: 4px;
   padding: 3px 6px;
-  background: #203033;
-  color: #b0e6d4;
+  background: var(--term-panel);
+  color: var(--term-accent);
   font-size: .8rem;
   pointer-events: none;
+}
+.terminal-screen-notice:not(:empty) {
+  position:absolute; bottom:calc(.5rem + var(--terminal-ime,0px)); left:4px; z-index:6;
+  max-width:calc(100% - 8px); border-radius:4px; padding:3px 6px; background:var(--term-panel);
+  color:var(--term-accent); font-size:.8rem; pointer-events:none;
 }
 .terminal-handles { position: absolute; inset: 0; pointer-events: none; }
 .terminal-view .terminal-handles button {
@@ -144,10 +196,10 @@
   border: 0;
   background: transparent;
 }
-.terminal-handles button:after { content: ""; position: absolute; inset: 4px; background: #a5eacb; border: 1px solid #203c36; border-radius: 50%; }
+.terminal-handles button:after { content: ""; position: absolute; inset: 4px; background: var(--term-accent); border: 1px solid var(--term-bg); border-radius: 50%; }
 .terminal-handles button:first-child { transform: translate(-90%, -90%); }
 .terminal-handles button:last-child { transform: translate(-10%, -10%); }
-.terminal-native-paste, .terminal-dialog-actions { display: flex; gap: 4px; }
+.terminal-native-paste { display: flex; gap: 4px; }
 .terminal-native-paste textarea {
   flex: 1;
   min-width: 0;
@@ -155,23 +207,50 @@
   margin: 0;
   resize: none;
   font: 16px system-ui, sans-serif;
-  background: #172628;
+  background: var(--term-bg);
   color: inherit;
-  border: 1px solid #668481;
+  border: 1px solid var(--term-edge);
   border-radius: 4px;
   padding: 4px;
 }
-.terminal-view .terminal-copy-dialog {
-  width: min(32rem, 95vw);
-  max-height: 90dvh;
-  padding: 1rem;
-  border: 1px solid #496360;
-  border-radius: .5rem;
-  background: #203033;
-  color: #e5eeec;
+.terminal-copy-mode {position:absolute;inset:0 0 var(--terminal-ime,0px);z-index:5;background:var(--term-bg);display:flex;flex-direction:column;min-height:0;}
+.terminal-copy-mode textarea {flex:1;min-height:0;border:0;outline:none;background:var(--term-bg);color:var(--term-fg);padding:0;resize:none;white-space:pre;overflow:auto;overscroll-behavior:contain;border-radius:0;touch-action:pan-x pan-y;font-variant-ligatures:none;}
+.copy-row {display:flex;gap:4px;align-items:center;padding:2px 4px max(2px,var(--terminal-safe,env(safe-area-inset-bottom)));background:var(--term-panel);border-top:1px solid var(--term-edge);}
+.copy-row button {min-height:36px;}
+.copy-row button:last-child {margin-left:auto;min-width:42px;}
+.terminal-view:has(.terminal-copy-mode) .terminal-handles {visibility:hidden;}
+
+.terminal-tab-group { color: var(--term-fg); isolation: isolate; }
+.terminal-tabs .terminal-tab-group[data-selected=false]::before {
+  content: ''; position: absolute; inset: calc(-1 * var(--tab-stroke)) calc(-1 * var(--tab-stroke)) 0;
+  border-radius: inherit; background: color-mix(in srgb, var(--term-bg) 88%, var(--term-accent));
+  z-index: -1; pointer-events: none;
 }
-.terminal-copy-dialog::backdrop { background: #142b3b70; }
-.terminal-copy-dialog label { display: block; margin: 0 0 .5rem; }
-.terminal-copy-dialog textarea { display: block; width: 100%; max-height: 35dvh; padding: .5rem; font: 1rem monospace; resize: vertical; }
-.terminal-dialog-actions { margin-top: .65rem; justify-content: end; }
-.terminal-dialog-actions button { min-height: 2rem; }
+/* Move the painted face and labels together while the buttons keep their hit areas. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .terminal-tabs :is(.terminal-tab-group[data-selected=false], #new-terminal[aria-selected=false]):hover { --tab-drop: 2px; }
+  .terminal-tabs .terminal-tab-group[data-selected=false]::before,
+  .terminal-tab-group[data-selected=false] button > span,
+  #new-terminal[aria-selected=false] > span {
+    transform: translateY(var(--tab-drop, 0px)); transition: transform 100ms ease-out;
+  }
+}
+.terminal-tab-group button:focus-visible { outline-color: var(--term-accent); }
+.terminal-tab-group .terminal-tab-close { color: inherit; }
+.terminal-copy-mode textarea::selection { background: var(--term-selection); color: var(--term-selected-text); }
+.launch-themes { min-width: 0; padding: 0; margin: 0; border: 0; }
+.launch-themes legend { padding: 0; margin-bottom: .35rem; }
+.terminal-theme-picker {
+  position: absolute; bottom: calc(100% + 3px); left: 4px; right: auto;
+  max-height: calc(var(--terminal-visible-height, 100dvh) - 100% - 6px); overflow-y: auto; overscroll-behavior: contain;
+  max-width: calc(100% - 8px); padding: 5px; border-radius: 5px;
+  color: var(--term-fg); background: var(--term-panel); border: 1px solid var(--term-edge);
+}
+.terminal-theme-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.terminal-theme-choices button, .terminal-view .terminal-theme-choices button {
+  display: flex; gap: .4em; align-items: center; min-height: 34px; padding: .2em .65em;
+  background: var(--term-bg); color: var(--term-fg); border: 1px solid var(--term-accent);
+  border-radius: 4px; font: inherit; cursor: pointer;
+}
+.terminal-theme-choices button span { width: 1em; color: var(--term-accent); }
+.terminal-theme-choices button[aria-pressed=true] { box-shadow: inset 0 0 0 1px var(--term-accent); }

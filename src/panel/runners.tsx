@@ -19,11 +19,11 @@ export function Runners({ feedback }: { feedback: Feedback }) {
     void getRunners().then(setRunners).catch(err => { if (mounted.current) feedback(errorMessage(err)); });
   }, [feedback, mounted]);
   return <>
-    <h1>Раннеры</h1>
+    <h1>Runners</h1>
     <ul id="runner-list">{runners.map(runner => <li key={runner.name}><strong>{runner.name}</strong>
-      <span>{!runner.enabled ? 'Отключён' : runner.available ? 'Доступен' : 'Недоступен'}</span>
+      <span>{!runner.enabled ? 'Disabled' : runner.available ? 'Available' : 'Unavailable'}</span>
     </li>)}</ul>
-    <button id="new-runner" onClick={() => { setError(''); setEditing(true); }}>Добавить раннер</button>
+    <button id="new-runner" onClick={() => { setError(''); setEditing(true); }}>Add runner</button>
     {editing && <Dialog id="runner-dialog" close={() => setEditing(false)}>
       <Form id="register-runner" feedback={setError} submit={async form => {
         const schema = field(form, 'schema');
@@ -38,18 +38,18 @@ export function Runners({ feedback }: { feedback: Feedback }) {
           if (mounted.current) feedback(errorMessage(err));
         }
       }}>
-        <h2>Регистрация раннера</h2>
-        <p>Укажите пути к установленному пакету и его конфигурацию на сервере.</p>
-        <label>Имя раннера<input id="runner-name" name="name" required defaultValue="codex" /></label>
-        <label>Точка входа<input id="entrypoint" name="entrypoint" required
+        <h2>Register a runner</h2>
+        <p>Enter the path to the installed runner’s entry point and its configuration on the server.</p>
+        <label>Runner name<input id="runner-name" name="name" required defaultValue="codex" /></label>
+        <label>Entry point<input id="entrypoint" name="entrypoint" required
           defaultValue="/run/pappai/private/runners/node_modules/@flinbein/pappai-runner-codex/src/index.mjs" /></label>
-        <label>Конфигурация (JSON)<textarea id="runner-config" name="config" required rows={6} spellCheck={false} defaultValue={formatJSON(defaultConfig)} /></label>
-        <details><summary>Схема настроек APP</summary>
-          <label>Схема JSON (необязательно)<textarea id="runner-schema" name="schema" rows={4} spellCheck={false} /></label>
+        <label>Configuration (JSON)<textarea id="runner-config" name="config" required rows={6} spellCheck={false} defaultValue={formatJSON(defaultConfig)} /></label>
+        <details><summary>APP settings schema</summary>
+          <label>JSON schema (optional)<textarea id="runner-schema" name="schema" rows={4} spellCheck={false} /></label>
         </details>
         <p id="runner-error" role="alert">{error}</p>
-        <div className="app-actions"><Submit>Зарегистрировать</Submit>
-          <button className="secondary" type="button" data-close onClick={() => setEditing(false)}>Отмена</button>
+        <div className="app-actions"><Submit>Register</Submit>
+          <button className="secondary" type="button" data-close onClick={() => setEditing(false)}>Cancel</button>
         </div>
       </Form>
     </Dialog>}

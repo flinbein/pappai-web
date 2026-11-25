@@ -6,7 +6,7 @@ import { NodeActionLink } from './node-action-link';
 import type { NodeNavigation } from './node-action-link';
 import type { Refresh } from './workspace';
 
-const headings = ['Прикладные методы', 'Системные методы', 'События', 'Статьи'];
+const headings = ['Application methods', 'System methods', 'Events', 'Articles'];
 
 function featureGroup(name: string, feature: Feature) {
   if (feature.type === 'method') return name.startsWith('$.') ? 1 : 0;
@@ -22,8 +22,8 @@ function featureGroups(catalog: Catalog) {
 }
 
 export function FeatureLinks({ catalog, ...navigation }: NodeNavigation & { catalog: Catalog }) {
-  return <section id="feature-panel"><h2>Методы и справка</h2>
-    {Object.keys(catalog).length === 0 && <p>Нет доступных методов, событий или статей.</p>}
+  return <section id="feature-panel"><h2>Methods and help</h2>
+    {Object.keys(catalog).length === 0 && <p>No methods, events, or articles are available.</p>}
     {featureGroups(catalog).map((group, index) => group.length > 0 &&
       <details key={index} open={index === 0 || group.some(name => navigation.action === 'methods/' + encodeURIComponent(name))}>
         <summary>{headings[index]} ({group.length})</summary>
@@ -48,8 +48,8 @@ export function Method({ id, name, catalog, feature, chooseFeature, refresh }: M
   const [result, setResult] = useState('');
   const mounted = useMounted();
   return <>
-    <h2>{feature.type === 'method' ? 'Вызов метода' : 'Справка'}</h2>
-    <label>Методы, события и статьи<select id="feature" value={name} onChange={event => chooseFeature(event.target.value)}>
+    <h2>{feature.type === 'method' ? 'Method call' : 'Help'}</h2>
+    <label>Methods, events, and articles<select id="feature" value={name} onChange={event => chooseFeature(event.target.value)}>
       {featureGroups(catalog).map((group, index) => group.length > 0 && <optgroup key={index} label={headings[index]}>
         {group.map(value => <option key={value}>{value}</option>)}
       </optgroup>)}
@@ -57,18 +57,18 @@ export function Method({ id, name, catalog, feature, chooseFeature, refresh }: M
     <p id="feature-description">v{feature.version} · {feature.description}</p>
     <pre id="feature-doc">{feature.doc}</pre>
     <details id="schema-block" hidden={feature.schema === undefined}>
-      <summary>Схема JSON</summary><pre id="feature-schema">{formatJSON(feature.schema)}</pre>
+      <summary>JSON schema</summary><pre id="feature-schema">{formatJSON(feature.schema)}</pre>
     </details>
     {feature.type === 'method' && <Form id="method-call" feedback={setResult} submit={async form => {
       const data = parseJSON(field(form, 'arguments'));
-      setResult('Выполняется…');
+      setResult('Running…');
       const value = await call(id, name, data, feature.version);
       setResult(formatJSON(value));
       if (mounted.current && name.startsWith('$.')) await refresh();
     }}>
-      <label>Аргументы метода (JSON)<textarea id="arguments" name="arguments" rows={5} spellCheck={false} required
+      <label>Method arguments (JSON)<textarea id="arguments" name="arguments" rows={5} spellCheck={false} required
         defaultValue={name === 'agent.execute' ? '{ "input": "" }' : '{}'} /></label>
-      <Submit>Вызвать метод</Submit>
+      <Submit>Call method</Submit>
     </Form>}
     <pre id="method-result" role="status">{result}</pre>
   </>;

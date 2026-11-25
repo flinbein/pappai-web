@@ -48,7 +48,7 @@ export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Pr
   }, [readState, mounted, feedback]);
   usePappaiEvent({ node: id, events: ['$.app.statusChanged', '$.app.restarted', '$.node.lastIssueUpdated'] },
     synchronize, { onSubscribed: synchronize, onError: error => {
-      feedback('Не удалось подписаться на изменения APP: ' + errorMessage(error));
+      feedback('Could not subscribe to APP updates: ' + errorMessage(error));
       synchronize();
     } });
   useEffect(() => {
@@ -72,29 +72,29 @@ export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Pr
     onCatalog(catalog);
     if (editor.current?.value === draft) {
       setManifest(formatJSON(updated));
-      setSaved('Манифест сохранён');
+      setSaved('Manifest saved');
     }
     await readState();
   }
 
-  return <section id="app-management"><h2>Состояние APP</h2>
+  return <section id="app-management"><h2>APP status</h2>
     <dl className="app-state">
-      <div><dt>Статус</dt><dd id="app-status">{state && statusLabel[state.status]}</dd></div>
-      <div><dt>Занято слотов</dt><dd id="app-active">{pool && (pool.limit === null ? pool.active : pool.active + ' / ' + pool.limit)}</dd></div>
-      <div><dt>В очереди</dt><dd id="app-queued">{pool?.queued}</dd></div>
+      <div><dt>Status</dt><dd id="app-status">{state && statusLabel[state.status]}</dd></div>
+      <div><dt>Slots in use</dt><dd id="app-active">{pool && (pool.limit === null ? pool.active : pool.active + ' / ' + pool.limit)}</dd></div>
+      <div><dt>Queued</dt><dd id="app-queued">{pool?.queued}</dd></div>
     </dl>
     <p id="app-issue" hidden={!state?.lastIssue}>{state?.lastIssue}</p>
     <div className="app-actions">
-      <Action id="app-start" disabled={state?.status !== 'stopped' && state?.status !== 'error'} feedback={feedback} run={() => manage('start')}>Запустить</Action>
-      <Action id="app-stop" className="secondary" disabled={state?.status !== 'working' && state?.status !== 'error'} feedback={feedback} run={() => manage('stop')}>Остановить</Action>
-      <Action id="app-restart" className="secondary" disabled={state?.status !== 'working' || pool?.restarting} feedback={feedback} run={() => manage('restart')}>Перезапустить</Action>
-      <Action id="app-refresh" className="secondary" feedback={feedback} run={readState}>Обновить состояние</Action>
+      <Action id="app-start" disabled={state?.status !== 'stopped' && state?.status !== 'error'} feedback={feedback} run={() => manage('start')}>Start</Action>
+      <Action id="app-stop" className="secondary" disabled={state?.status !== 'working' && state?.status !== 'error'} feedback={feedback} run={() => manage('stop')}>Stop</Action>
+      <Action id="app-restart" className="secondary" disabled={state?.status !== 'working' || pool?.restarting} feedback={feedback} run={() => manage('restart')}>Restart</Action>
+      <Action id="app-refresh" className="secondary" feedback={feedback} run={readState}>Refresh status</Action>
     </div>
-    <details id="manifest-details"><summary>Манифест APP</summary>
-      <p id="manifest-changed" hidden={!state?.manifestChanged}>Новый манифест ожидает завершения постоянного процесса.</p>
-      <label>Источник манифеста JSON<textarea id="app-manifest" ref={editor} rows={10} spellCheck={false}
+    <details id="manifest-details"><summary>APP manifest</summary>
+      <p id="manifest-changed" hidden={!state?.manifestChanged}>The new manifest will take effect when the persistent process exits.</p>
+      <label>Manifest source (JSON)<textarea id="app-manifest" ref={editor} rows={10} spellCheck={false}
         value={manifest ?? ''} disabled={manifest === undefined} onChange={event => { setManifest(event.target.value); setSaved(''); }} /></label>
-      <Action id="app-save" disabled={manifest === undefined} feedback={setSaved} run={save}>Сохранить манифест</Action>
+      <Action id="app-save" disabled={manifest === undefined} feedback={setSaved} run={save}>Save manifest</Action>
       <p id="app-feedback" role="status">{saved}</p>
     </details>
   </section>;

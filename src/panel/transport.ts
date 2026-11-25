@@ -25,7 +25,7 @@ type Request = {
   reject: (error: Error) => void;
 };
 
-const disconnected = () => new Error('Соединение с workspace прервано.');
+const disconnected = () => new Error('The workspace connection was interrupted.');
 
 export class PanelConnection {
   private openSocket: () => WebSocket;

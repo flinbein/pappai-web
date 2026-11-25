@@ -3,26 +3,41 @@ type Point = {id: number; x: number; y: number};
 type Hint = (text: string, anchor?: HTMLElement) => void;
 
 // Two complete Shift taps. Using Shift to type or as part of a chord cancels the gesture.
-export function bindToolbarShortcut(root: HTMLElement, toggle: () => void, signal: AbortSignal) {
+export function bindToolbarShortcut(root: HTMLElement, toggle: () => void, fullscreen: () => void, signal: AbortSignal) {
   let down: number | undefined;
   let released: number | undefined;
+  let ctrl = false;
   function reset() { down = released = undefined; }
   root.addEventListener('keydown', event => {
-    if (event.key !== 'Shift' || event.ctrlKey || event.altKey || event.metaKey || event.isComposing ||
-        (event.target instanceof Element && event.target.closest('dialog, .terminal-native-paste'))) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (event.key === 'Enter' && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey &&
+        !event.isComposing && !target?.closest('dialog, .terminal-native-paste')) {
+      reset();
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) fullscreen();
+      return;
+    }
+    if (event.key !== 'Shift' || event.altKey || event.metaKey || event.isComposing ||
+        target?.closest('dialog, .terminal-native-paste') || (!event.ctrlKey && target?.closest('.terminal-copy-mode'))) {
       reset();
     } else if (!event.repeat) {
+      if (ctrl !== event.ctrlKey) reset();
+      ctrl = event.ctrlKey;
       down = performance.now();
     }
   }, {capture:true, signal});
   root.addEventListener('keyup', event => {
-    if (event.key !== 'Shift' || down === undefined) return;
+    if (event.key !== 'Shift' || ctrl !== event.ctrlKey) { reset(); return; }
+    if (down === undefined) return;
     const now = performance.now();
     if (now - down > 350) { reset(); return; }
     down = undefined;
     if (released !== undefined && now - released <= 400) {
       reset();
-      toggle();
+      event.preventDefault();
+      event.stopPropagation();
+      if (ctrl) fullscreen(); else toggle();
     } else released = now;
   }, {capture:true, signal});
   root.addEventListener('focusout', reset, {signal});
@@ -69,7 +84,7 @@ function bindPress<T extends Point>(button: GestureButton, signal: AbortSignal, 
 const point = (event: PointerEvent) => ({id: event.pointerId, x: event.clientX, y: event.clientY});
 
 // Preserve keyboard clicks and perform touch actions while the user's activation is live.
-export function bindButtonHints(toolbar: HTMLElement, report: Hint, signal: AbortSignal) {
+export function bindButtonHints(scope: HTMLElement, toolbar: HTMLElement, report: Hint, signal: AbortSignal) {
   let press: (Point & {button: HTMLButtonElement}) | undefined;
   let suppressed: HTMLButtonElement | undefined;
   let timer: number | undefined;
@@ -77,9 +92,9 @@ export function bindButtonHints(toolbar: HTMLElement, report: Hint, signal: Abor
     clearTimeout(timer);
     press = undefined;
   }
+  scope.addEventListener('pointerdown', () => { suppressed = undefined; }, {capture: true, signal});
   toolbar.addEventListener('pointerdown', event => {
     cancel();
-    suppressed = undefined;
     const button = event.target instanceof Element ? event.target.closest('button[data-hint]') : null;
     if (!(button instanceof HTMLButtonElement) || !event.isPrimary || event.button !== 0 || button.disabled) return;
     press = {...point(event), button};
@@ -107,9 +122,10 @@ export function bindButtonHints(toolbar: HTMLElement, report: Hint, signal: Abor
   window.addEventListener('pointercancel', cancel, {signal});
   window.addEventListener('blur', cancel, {signal});
   toolbar.addEventListener('contextmenu', event => event.preventDefault(), {signal});
-  toolbar.addEventListener('click', event => {
+  scope.addEventListener('click', event => {
     if (!event.detail) return;
-    // Switching rows can put a different button underneath the released finger.
+    // The native click can land on a sibling of the toolbar after a mode change.
+    // A fresh pointerdown anywhere in the terminal starts an independent gesture.
     if (suppressed) {
       event.preventDefault();
       event.stopImmediatePropagation();

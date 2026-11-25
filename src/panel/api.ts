@@ -28,7 +28,7 @@ export interface Session {
   canManageApps: boolean;
 }
 export const statusLabel: Record<Status, string> = {
-  working: 'Работает', stopping: 'Останавливается', stopped: 'Остановлена', error: 'Ошибка',
+  working: 'Running', stopping: 'Stopping', stopped: 'Stopped', error: 'Error',
 };
 
 export function errorMessage(error: unknown) {
@@ -43,7 +43,7 @@ export function parseJSON(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error('Проверьте JSON: ' + errorMessage(error));
+    throw new Error('Invalid JSON: ' + errorMessage(error));
   }
 }
 
@@ -74,12 +74,12 @@ export function startPanelConnection(user: string, onExpired: () => void) {
 }
 
 export function subscribePanelEvent(...args: Parameters<PanelConnection['subscribe']>) {
-  if (!active) throw new Error('Сессия завершена. Войдите снова.');
+  if (!active) throw new Error('Your session has ended. Sign in again.');
   return active.connection.subscribe(...args);
 }
 
 export async function rpc<T = unknown>(method: string, params: unknown): Promise<T> {
-  if (!active) throw new Error('Сессия завершена. Войдите снова.');
+  if (!active) throw new Error('Your session has ended. Sign in again.');
   return active.connection.rpc<T>(method, params);
 }
 
@@ -116,7 +116,7 @@ export async function register(email: string, code: string) {
   const credential = await navigator.credentials.create({
     publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options),
   });
-  if (!(credential instanceof PublicKeyCredential)) throw new Error('Регистрация passkey отменена.');
+  if (!(credential instanceof PublicKeyCredential)) throw new Error('Passkey registration was canceled.');
   await auth('register/verify', credential.toJSON());
 }
 
@@ -125,7 +125,7 @@ export async function login() {
   const credential = await navigator.credentials.get({
     publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options),
   });
-  if (!(credential instanceof PublicKeyCredential)) throw new Error('Вход с passkey отменён.');
+  if (!(credential instanceof PublicKeyCredential)) throw new Error('Passkey sign-in was canceled.');
   await auth('login/verify', credential.toJSON());
 }
 

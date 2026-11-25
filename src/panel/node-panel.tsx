@@ -17,10 +17,10 @@ interface ChatProps {
 }
 function Chat({ id, version, reply, updateReply }: ChatProps) {
   const [message, setMessage] = useState('');
-  return <section id="chat"><h2>Сообщение агенту</h2>
+  return <section id="chat"><h2>Message agent</h2>
     <Form id="send-message" feedback={() => {}} submit={async () => {
       if (!message.trim() || reply?.pending) return;
-      updateReply({ pending: true, text: 'Ожидаем ответ агента…' });
+      updateReply({ pending: true, text: 'Waiting for the agent to reply…' });
       try {
         const result = await call(id, 'agent.execute', { input: message }, version);
         updateReply({ pending: false, text: typeof result === 'string' ? result : formatJSON(result) });
@@ -29,8 +29,8 @@ function Chat({ id, version, reply, updateReply }: ChatProps) {
         updateReply({ pending: false, text: errorMessage(error) });
       }
     }}>
-      <label>Сообщение<textarea id="message" rows={3} required value={message} onChange={event => setMessage(event.target.value)} /></label>
-      <Submit disabled={reply?.pending}>Отправить сообщение</Submit>
+      <label>Message<textarea id="message" rows={3} required value={message} onChange={event => setMessage(event.target.value)} /></label>
+      <Submit disabled={reply?.pending}>Send message</Submit>
     </Form>
     <pre id="reply" role="status">{reply?.text}</pre>
   </section>;
@@ -103,7 +103,7 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
         return <Chat id={id} version={execute.version} reply={reply} updateReply={updateReply} />;
       }
     }
-    if (!catalog) return error ? null : <p role="status">Загрузка действий…</p>;
+    if (!catalog) return error ? null : <p role="status">Loading actions…</p>;
     if (segments.length === 2) {
       if (section === 'methods' && name && contract) {
         return <Method key={name} id={id} name={name} feature={contract} catalog={catalog} refresh={refresh}
@@ -114,7 +114,7 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
           chooseType={value => chooseAction('create/' + value)} close={() => chooseAction('')} refresh={refresh} />;
       }
     }
-    return <p role="status">Для этой ноды действие недоступно.</p>;
+    return <p role="status">This action is unavailable for this node.</p>;
   }
 
   return <>
@@ -124,24 +124,24 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
           <h1 id="node-name">{node.name}</h1><code id="node-id">{id}</code></div>
         <span id="node-status" className="status" hidden={!status} data-state={status ?? ''}>{status && statusLabel[status]}</span>
       </div>
-      {hasChildren && <section id="children"><h2>Дочерние ноды</h2>
-        <p id="child-count">Видимых дочерних нод: {nodes.filter(n => n.parentId === id).length}</p>
+      {hasChildren && <section id="children"><h2>Child nodes</h2>
+        <p id="child-count">Visible child nodes: {nodes.filter(n => n.parentId === id).length}</p>
       </section>}
       {(createChoices.length > 0 || chat || manageApp || type === 'profile') && <section id="actions">
-        <h2>Действия</h2>
+        <h2>Actions</h2>
         <ul className="action-list">
-          {chat && <li><NodeActionLink {...navigation} id="show-chat" path="chat">Сообщение агенту</NodeActionLink></li>}
-          {manageApp && <li><NodeActionLink {...navigation} id="show-management" path="manage">Управление APP</NodeActionLink></li>}
-          {type === 'profile' && <li><NodeActionLink {...navigation} id="show-profile" path="profile">Настройка профиля</NodeActionLink></li>}
+          {chat && <li><NodeActionLink {...navigation} id="show-chat" path="chat">Message agent</NodeActionLink></li>}
+          {manageApp && <li><NodeActionLink {...navigation} id="show-management" path="manage">Manage APP</NodeActionLink></li>}
+          {type === 'profile' && <li><NodeActionLink {...navigation} id="show-profile" path="profile">Profile settings</NodeActionLink></li>}
           {createChoices.map(([value, label], index) => <li key={value}>
-            <NodeActionLink {...navigation} id={index === 0 ? 'new-node' : undefined} path={'create/' + value}>Создать {label}</NodeActionLink>
+            <NodeActionLink {...navigation} id={index === 0 ? 'new-node' : undefined} path={'create/' + value}>Create {label}</NodeActionLink>
           </li>)}
         </ul>
       </section>}
-      {catalog ? <FeatureLinks {...navigation} catalog={catalog} /> : !error && <p role="status">Загрузка справки…</p>}
+      {catalog ? <FeatureLinks {...navigation} catalog={catalog} /> : !error && <p role="status">Loading help…</p>}
       {!action && <p id="node-error" role="alert">{error}</p>}
     </section>
-    {action && <section className="action-column" aria-label="Действие ноды">
+    {action && <section className="action-column" aria-label="Node action">
       {renderAction()}
       <p id="node-error" role="alert">{error}</p>
     </section>}

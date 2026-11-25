@@ -2,16 +2,23 @@ import {useCallback, useLayoutEffect, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
 import '@xterm/xterm/css/xterm.css';
 import './terminal.css';
+import {CopyMode} from './copy-mode';
 import {bindBell} from './bell';
-import {CopyDialog, PasteField, useTerminalClipboard} from './clipboard';
+import {PasteField, useTerminalClipboard} from './clipboard';
 import {functionKeys, noModifiers} from './keys';
 import {defaultFontSize, openTerminal, type TerminalSession} from './session';
 import {bindDirectionPad, bindButtonHints, bindToolbarShortcut} from './toolbar';
-import {bindTerminalTouch} from './touch';
+import {bindFullscreenTap, bindTerminalTouch} from './touch';
+import type {TabCarousel} from './carousel';
+import {bindScreenWheel} from './trackpad';
 import {bindViewport, openKeyboard} from './viewport';
 import type {TerminalState, TerminalUpdate} from './tabs';
+import {themes, ThemeChoices, themeStyle, type ThemeName} from './themes';
 
 interface TerminalProps {
+  theme: ThemeName;
+  onThemeChange(theme: ThemeName): void;
+  carousel?: {readonly current: TabCarousel | null};
   id: number;
   command: string;
   visible: boolean;
@@ -28,17 +35,19 @@ function savedFontSize() {
   return defaultFontSize;
 }
 
-export function TerminalView({id, command, visible, sandbox, connection, update}: TerminalProps) {
+export function TerminalView({id, command, visible, sandbox, connection, update, carousel, theme, onThemeChange}: TerminalProps) {
   const root = useRef<HTMLDivElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const handles = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const notice = useRef<HTMLSpanElement>(null);
+  const screenNotice = useRef<HTMLSpanElement>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
   const session = useRef<TerminalSession | null>(null);
   const [modifiers, setModifiers] = useState(noModifiers);
   const [toolsVisible, setToolsVisible] = useState(false);
+  const [choosingTheme, setChoosingTheme] = useState(false);
   const [menu, setMenu] = useState<'input' | 'tools' | 'function'>('input');
   useLayoutEffect(() => {
     if (!visible || connection !== 'online' || !navigator.wakeLock) return;
@@ -67,9 +76,12 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
     };
   }, [visible, connection]);
   const report = useCallback((text: string, anchor?: HTMLElement) => {
-    const label = notice.current, keys = toolbar.current;
+    const keys = toolbar.current;
+    const label = keys?.hidden || root.current?.querySelector('.terminal-copy-mode') ? screenNotice.current : notice.current;
     if (!label || !keys) return;
     clearTimeout(noticeTimer.current);
+    if (screenNotice.current) screenNotice.current.textContent = '';
+    if (notice.current) notice.current.textContent = '';
     label.textContent = text;
     let left = 4;
     if (anchor) {
@@ -107,6 +119,30 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
   }, [id, command, sandbox, update, copy, paste, setNativePaste]);
 
   useLayoutEffect(() => {
+    if (session.current) session.current.term.options.theme = themes[theme];
+  }, [theme, id, command, sandbox, update, copy, paste, setNativePaste]);
+
+  useLayoutEffect(() => {
+    if (!choosingTheme) return;
+    if (!visible || copyView || nativePaste || !toolsVisible || menu !== 'tools') {
+      setChoosingTheme(false);
+      return;
+    }
+    const bindings = new AbortController();
+    const options = {capture: true, signal: bindings.signal};
+    document.addEventListener('pointerdown', event => {
+      if (event.target instanceof Node && !toolbar.current?.contains(event.target)) setChoosingTheme(false);
+    }, options);
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setChoosingTheme(false);
+    }, options);
+    return () => bindings.abort();
+  }, [choosingTheme, visible, copyView, nativePaste, toolsVisible, menu]);
+
+  useLayoutEffect(() => {
     const current = session.current;
     if (!visible || !current) return;
     const scope = root.current!, keys = toolbar.current!;
@@ -127,11 +163,13 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
       });
       current!.resize();
     }
-    bindTerminalTouch(current.term, screen.current!, handles.current!, font, () => openKeyboard(current), () => toggleToolbar('input'), signal);
-    bindToolbarShortcut(scope, () => toggleToolbar('tools'), signal);
-    bindViewport(scope, button('fullscreen'), current, report, signal);
+    bindTerminalTouch(current.term, screen.current!, handles.current!, font, () => openKeyboard(current), () => toggleToolbar('input'), signal, carousel);
+    bindScreenWheel(screen.current!, current.term, font, signal);
+    const fullscreen = bindViewport(scope, button('fullscreen'), current, report, signal);
+    bindFullscreenTap(scope, fullscreen, signal);
+    bindToolbarShortcut(scope, () => toggleToolbar('tools'), fullscreen, signal);
     bindBell(current.term, scope, signal);
-    bindButtonHints(keys, report, signal);
+    bindButtonHints(scope, keys, report, signal);
     bindDirectionPad(button('arrow-pad'), 'arrows', signal, key, report);
     bindDirectionPad(button('nav-pad'), 'nav', signal, key, report);
     current.resize();
@@ -145,7 +183,7 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
       setNativePaste(false);
       if (scope.contains(document.activeElement) && document.activeElement instanceof HTMLElement) document.activeElement.blur();
     };
-  }, [visible, sandbox, copy, paste, report, setCopyView, setNativePaste]);
+  }, [visible, sandbox, copy, paste, report, setCopyView, setNativePaste, carousel]);
 
   function font(size: number) {
     const current = session.current;
@@ -174,18 +212,25 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
   }
   const online = connection === 'online';
   const control = (name: string) => ({id: visible ? name : undefined, 'data-control': name});
-  return <div className="terminal-frame" hidden={!visible} id={'terminal-panel-' + id}
+  return <div className="terminal-frame" inert={!visible} hidden={!visible} id={'terminal-panel-' + id}
     role="tabpanel" aria-labelledby={'terminal-tab-' + id}>
-    <div ref={root} className="terminal-view" tabIndex={-1} aria-label="Terminal">
-      <div ref={screen} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
+    <div ref={root} className="terminal-view" style={themeStyle(theme)} tabIndex={-1} aria-label="Terminal">
+      <span ref={screenNotice} className="terminal-screen-notice" role="status"/>
+      <div inert={!!copyView} ref={screen} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
         <div ref={host} className="terminal-host"/>
       </div>
-      <div ref={handles} className="terminal-handles">
+      <div inert={!!copyView} ref={handles} className="terminal-handles">
         <button hidden aria-label="Selection start"/><button hidden aria-label="Selection end"/>
       </div>
-      <div ref={toolbar} className="terminal-toolbar" data-menu={nativePaste ? 'paste' : menu} hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
+      <div inert={!!copyView} ref={toolbar} className="terminal-toolbar" data-menu={nativePaste ? 'paste' : menu} hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
+        onClickCapture={event => {
+          if (choosingTheme && event.target instanceof Element && !event.target.closest('[data-control="theme"], .terminal-theme-picker')) setChoosingTheme(false);
+        }}
         onPointerDown={event => { if (event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
         <span ref={notice} className="terminal-hint" role="status"/>
+        {choosingTheme && <div className="terminal-theme-picker">
+          <ThemeChoices value={theme} choose={next => {onThemeChange(next); setChoosingTheme(false);}}/>
+        </div>}
         <div className="terminal-key-row" role="group" hidden={nativePaste || menu !== 'input'} aria-label="Input keys">
           <div className="terminal-keys">
             <button disabled={!online} data-key="Escape" data-hint="Send Escape." onClick={() => keyPress('Escape')}>Esc</button>
@@ -214,6 +259,8 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
             <button {...control('paste')} disabled={!online} data-hint="Paste text from the clipboard." onClick={paste}>Paste</button>
             <button {...control('font-up')} aria-label="Increase font size" data-hint="Increase the font size." onClick={() => stepFont(1)}>A+</button>
             <button {...control('font-down')} aria-label="Decrease font size" data-hint="Decrease the font size." onClick={() => stepFont(-1)}>A−</button>
+            <button {...control('theme')} aria-label="Theme" aria-expanded={choosingTheme} data-hint="Choose a terminal theme."
+              onClick={() => setChoosingTheme(open => !open)}>🎨</button>
             <button {...control('fullscreen')} hidden={!document.fullscreenEnabled} aria-label="Enter fullscreen" data-hint="">⛶</button>
           </div>
           <button {...control('terminal-input')} aria-label="Show input keys" data-hint="Return to input keys." onClick={() => switchMenu('input')}>⌨</button>
@@ -223,9 +270,12 @@ export function TerminalView({id, command, visible, sandbox, connection, update}
           dismissPaste();
         }}/>}
       </div>
-      {visible && copyView && <CopyDialog view={copyView} report={report} onClose={() => {
-        setCopyView(null);
-        if (session.current?.online() && session.current.visible()) session.current.term.focus();
+      {visible && copyView && <CopyMode view={copyView} onClose={() => {
+        flushSync(() => setCopyView(null));
+        if (session.current?.visible()) {
+          if (!matchMedia("(pointer: coarse)").matches && session.current.online()) session.current.term.focus();
+          else root.current?.focus({preventScroll:true});
+        }
       }}/>}
     </div>
   </div>;

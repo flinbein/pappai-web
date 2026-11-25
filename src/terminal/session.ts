@@ -35,7 +35,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
   let finished = false;
 
   const online = () => started && !finished && socket.readyState === WebSocket.OPEN;
-  const visible = () => screen.clientWidth > 0 && screen.clientHeight > 0;
+  const visible = () => screen.clientWidth > 0 && screen.clientHeight > 0 && !screen.closest('.terminal-frame[hidden]');
   function resize() {
     if (!visible()) return;
     const size = fit.proposeDimensions();
@@ -120,7 +120,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
     } else if (typeof data === 'string') {
       const info = JSON.parse(data);
       if (info.startFailed === true && !started) {
-        finish({error: info.error || 'Не удалось запустить терминал'});
+        finish({error: info.error || 'Could not start terminal'});
       } else if (info.started === true && !started && !finished) {
         started = true;
         resize();

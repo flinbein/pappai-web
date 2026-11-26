@@ -1,3 +1,5 @@
+const focusDelayMs = 200;
+
 /** Bind only to the selected live terminal. Ownership notifications alone must
  * never make the previous window ask for control again. */
 export function bindTerminalActivation(root: HTMLElement, take: () => void) {
@@ -5,7 +7,8 @@ export function bindTerminalActivation(root: HTMLElement, take: () => void) {
   const {signal} = events;
   const capture = {capture:true, passive:false, signal};
   const preview = () => root.dataset.readonly === 'true';
-  let focusFrame = 0;
+  let focusTimer = 0;
+  let pointerHeld = false;
   let previewPress = false;
   const keys = new Set<string>();
 
@@ -14,18 +17,29 @@ export function bindTerminalActivation(root: HTMLElement, take: () => void) {
     event.stopImmediatePropagation();
   }
   function activate() {
-    cancelAnimationFrame(focusFrame);
-    if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
-    // A click that raises the window must finish on the preview. Give its
-    // pointerdown a chance to arrive before replacing the terminal grid.
-    focusFrame = requestAnimationFrame(() => {
-      if (!previewPress && document.visibilityState === 'visible' && document.hasFocus()) take();
-    });
+    clearTimeout(focusTimer);
+    if (pointerHeld || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+    focusTimer = window.setTimeout(() => {
+      if (preview() && !pointerHeld && document.visibilityState === 'visible' && document.hasFocus()) take();
+    }, focusDelayMs);
   }
+  // A tab-strip press can precede or follow window focus, and the user can
+  // hold it longer than the delay. Only the eventual selection may claim a PTY.
+  document.addEventListener('pointerdown', () => {
+    pointerHeld = true;
+    clearTimeout(focusTimer);
+  }, capture);
+  const releasePointer = () => { pointerHeld = false; };
+  document.addEventListener('pointerup', releasePointer, capture);
+  document.addEventListener('pointercancel', releasePointer, capture);
+  window.addEventListener('wheel', event => {
+    if (Math.abs(event.deltaX) > 1.5 * Math.abs(event.deltaY) && !event.ctrlKey) clearTimeout(focusTimer);
+  }, {capture:true, passive:true, signal});
   window.addEventListener('focus', activate, {signal});
   document.addEventListener('visibilitychange', activate, {signal});
   window.addEventListener('blur', () => {
-    cancelAnimationFrame(focusFrame);
+    clearTimeout(focusTimer);
+    pointerHeld = false;
     keys.clear();
     previewPress = false;
   }, {signal});
@@ -47,7 +61,6 @@ export function bindTerminalActivation(root: HTMLElement, take: () => void) {
   root.addEventListener('pointerdown', event => {
     previewPress = preview();
     if (previewPress) {
-      cancelAnimationFrame(focusFrame);
       consume(event);
     }
   }, capture);
@@ -68,5 +81,5 @@ export function bindTerminalActivation(root: HTMLElement, take: () => void) {
   }, capture);
 
   activate();
-  return () => { cancelAnimationFrame(focusFrame); events.abort(); };
+  return () => { clearTimeout(focusTimer); events.abort(); };
 }

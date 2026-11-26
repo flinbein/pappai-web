@@ -109,6 +109,12 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     });
     if (group) setExpanded(group);
   }
+  function chooseTab(id: number | null, group?: string) {
+    // A wheel gesture can commit a selection without focusing the browser window.
+    const tab = tabs.find(item => item.id === id);
+    if (port && tab && live(tab)) post({type:'terminal.take',id:tab.id});
+    select(id, group);
+  }
   const fromSwipe = useRef<(id: number | null) => void>(() => {});
   useLayoutEffect(() => {
     fromSwipe.current = id => {
@@ -116,10 +122,10 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
       const group = tabs.find(tab => tab.id === id)?.group;
       if (editor instanceof HTMLElement && editor.matches('.xterm-helper-textarea, #terminal-command') &&
           workspace.current?.contains(editor) && keyboardInset() > 60) {
-        flushSync(() => select(id, group));
+        flushSync(() => chooseTab(id, group));
         const input = workspace.current.querySelector<HTMLElement>(id === null ? '#terminal-command' : '.terminal-frame:not([hidden]) .xterm-helper-textarea:not([disabled])');
         input?.focus({preventScroll: true});
-      } else select(id, group);
+      } else chooseTab(id, group);
     };
   });
   useLayoutEffect(() => {
@@ -233,10 +239,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     return <div key={tab.id} className="strip-item" inert={tab.closing} data-closing={tab.closing}>
       <div className="terminal-tab-group" style={themeStyle(tab.theme)} data-selected={selected === tab.id}>
         <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab" data-terminal={tab.id} data-state={tab.state}
-          aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => {
-            if (selected === tab.id && port && !tab.owner && live(tab)) post({type:'terminal.take',id:tab.id});
-            select(tab.id, tab.group);
-          }}>
+          aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => chooseTab(tab.id, tab.group)}>
           <span className="terminal-tab-dot" role="img" title={status} aria-label={status}/><span className="terminal-tab-title">{title}</span>
         </button>
         <button type="button" className="terminal-tab-close" data-close-terminal={tab.id} aria-label={'Close terminal ' + tab.id}
@@ -265,7 +268,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
                   if (open) {
                     setExpanded(undefined);
                     if (groupActive) select(null);
-                  } else select(available.find(item => item.id === selections[group])?.id ?? available[0].id, group);
+                  } else chooseTab(available.find(item => item.id === selections[group])?.id ?? available[0].id, group);
                 }}>
                 <span className="group-reveal" inert={open}><span className="cli-group-star" role="img" title={status} aria-label={status}>★</span></span>
                 <span>{label}</span>

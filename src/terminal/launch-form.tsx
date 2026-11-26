@@ -100,6 +100,6 @@ export function LaunchForm({action, visible, theme, chooseTheme, defaultSandbox,
     </label>}
     <fieldset className="launch-themes"><legend>Theme</legend><ThemeChoices value={theme} choose={chooseTheme}/></fieldset>
     {issues.length > 0 && <ul className="launch-issues" role="status">{issues.map((issue,i) => <li key={i}>{issue.message}</li>)}</ul>}
-    <button id="start-terminal" type="submit" disabled={issues.length > 0}>Start</button>
+    <button id="start-terminal" type="submit" disabled={issues.length > 0}>{action ? 'Run' : 'Start'}</button>
   </form>;
 }

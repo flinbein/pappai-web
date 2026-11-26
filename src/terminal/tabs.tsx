@@ -181,14 +181,14 @@ export default function TerminalTabs({action, visible, canChooseSandbox, default
         const label = node + ' · ' + method;
         const status = groupStatus(items);
         return <Fragment key={group}><div className="terminal-tab-group cli-group" style={themeStyle(tab.theme)} data-selected={!open && groupActive}>
-          <button type="button" role="tab" className="terminal-tab" data-state={status} data-cli-group={group} aria-label={label}
+          <button type="button" role="tab" className="cli-group-toggle" data-state={status} data-cli-group={group} aria-label={label} title={label}
             aria-selected={!open && groupActive} aria-expanded={open} onClick={() => {
               if (open) setExpanded(undefined);
               else select(items.find(item => item.id === selections[group])?.id ?? items[0].id, group);
-            }}><span aria-hidden="true">{open ? '▾' : '▸'}</span><span className="terminal-tab-dot" role="img" title={status} aria-label={status}/>
-            <span className="terminal-tab-title">{label}</span></button>
-          <button type="button" className="terminal-tab-close" data-close-group={group} aria-label={'Close group ' + label}
-            onClick={() => remove(items, 'Close all terminals in ' + label + ' and end their running processes?')}>×</button>
+            }}><span className="cli-group-star" role="img" title={status} aria-label={status}>★</span>
+            <span className="terminal-tab-title">{open ? '(R)' : label}</span></button>
+          {!open && <button type="button" className="terminal-tab-close" data-close-group={group} aria-label={'Close group ' + label}
+            onClick={() => remove(items, 'Close all terminals in ' + label + ' and end their running processes?')}>×</button>}
         </div>{open && items.map(tabButton)}</Fragment>;
       })}
       <button id="new-terminal" type="button" role="tab" aria-controls="terminal-launch" aria-selected={selected === null}

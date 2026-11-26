@@ -8,9 +8,9 @@ Choose a terminal theme when launching a tab or change it live with the palette 
 
 ## CLI methods
 
-Open a PROFILE and select an advertised CLI method in **Actions**. The launch form shows the target node and method. Enter arguments, set environment variables and choose a theme. The browser checks the method’s JSON Schema and marks invalid fields before opening a terminal. A method that accepts no arguments or environment needs only a theme and **Start**.
+Open a PROFILE and select an advertised CLI method in **Actions**. The launch form shows the target node and method. Enter arguments, set environment variables and choose a theme. The browser checks the method’s JSON Schema and marks invalid fields before opening a terminal. A method that accepts no arguments or environment needs only a theme and **Run**.
 
-The method page shows its own sessions and a **+** tab for another launch. The global **Terminal** tool groups these sessions by node and method alongside ordinary shell tabs. Open a group to switch between its sessions. Collapse it to keep the selected terminal on screen. The global **+** always opens a shell launch form. Closing a starting or running terminal, or a group containing one, asks for confirmation.
+The method page shows its own sessions and a **+** tab for another launch. The global **Terminal** tool groups these sessions by node and method alongside ordinary shell tabs. Open a group to switch between its sessions. The star is green while a session is running, yellow while starting, red after a failure, and gray when all sessions closed successfully or disconnected. Use the compact **(R)** button to collapse the group and keep the selected terminal on screen. The global **+** always opens a shell launch form. Closing a starting or running terminal, or a group containing one, asks for confirmation.
 
 ## Runner installation
 

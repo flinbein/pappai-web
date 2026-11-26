@@ -1,0 +1,133 @@
+<!doctype html>
+<div id="root"></div>
+<output></output><img hidden src="/test-pending" alt="">
+<script type="module">
+  const entries = [];
+  const calls = [];
+  const terminals = [];
+  const commands = [];
+  const path = '/run/pappai/private/runners/demo/releases/one/runner.mjs';
+  const newPath = path.replace('/one/', '/two/');
+  const workspace = {id:'~', parentId:null, type:'workspace', name:'Workspace'};
+  const catalog = Object.fromEntries(['add','get','restart','disable'].map(name =>
+    ['$.runners.' + name, {type:'method', version:'1', description:name}]));
+  let rejectFirst = true;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (url, options) => url === '/api/session'
+    ? Promise.resolve(Response.json({user:'admin', canChooseSandbox:true, canManageApps:true}))
+    : nativeFetch(url, options);
+  class Socket {
+    static OPEN = 1;
+    readyState = 0;
+    constructor(url) {
+      this.terminal = String(url).includes('/api/ws/terminal');
+      if (this.terminal) terminals.push(this);
+      queueMicrotask(() => { this.readyState = 1; this.onopen?.(); });
+    }
+    send(text) {
+      const msg = JSON.parse(text);
+      if (this.terminal) {
+        if (msg.command) {
+          commands.push(msg.command);
+          this.emit({started:true, program:'node'});
+        }
+        return;
+      }
+      const reply = {jsonrpc:'2.0', id:msg.id, result:{}};
+      if (msg.method === 'discover') reply.result = [workspace];
+      if (msg.method === 'help') reply.result = catalog;
+      if (msg.method === 'call') {
+        if (msg.params.method === '$.runners.get') reply.result = entries;
+        else {
+          const {method,data} = msg.params;
+          calls.push({method,data});
+          if (rejectFirst) { rejectFirst = false; reply.error = {message:'Test registration failure'}; }
+          else if (method === '$.runners.add') entries.push({...data, source:{type:'npm', spec:'pappai-runner-demo@latest'}});
+          else {
+            const runner = entries.find(r => r.name === data.name);
+            runner.previousEntrypoint = runner.entrypoint;
+            runner.entrypoint = data.entrypoint;
+          }
+        }
+      }
+      queueMicrotask(() => this.emit(reply));
+    }
+    emit(msg) { this.onmessage?.({data:typeof msg === 'string' ? new TextEncoder().encode(msg).buffer : JSON.stringify(msg)}); }
+    close() { this.readyState = 3; }
+  }
+  window.WebSocket = Socket;
+  function assert(condition, message) { if (!condition) throw Error(message); }
+  async function wait(check, message) {
+    for (let i = 0; i < 300; i++) {
+      const value = check();
+      if (value) return value;
+      await new Promise(resolve => setTimeout(resolve, 15));
+    }
+    throw Error('Timed out: ' + message);
+  }
+  const el = selector => document.querySelector(selector);
+  const awaitEl = selector => wait(() => el(selector), selector);
+  const click = async selector => (await awaitEl(selector)).click();
+  const button = async text => (await wait(() => [...document.querySelectorAll('button')].find(b => b.textContent === text), text)).click();
+  function fill(selector, value) {
+    const node = el(selector);
+    const select = node instanceof HTMLSelectElement;
+    Object.getOwnPropertyDescriptor(select ? HTMLSelectElement.prototype : HTMLInputElement.prototype, 'value').set.call(node,value);
+    node.dispatchEvent(new Event(select ? 'change' : 'input', {bubbles:true}));
+  }
+  const link = method => '[data-action="methods/%24.runners.' + method + '"]';
+  const status = text => wait(() => el('#runner-status')?.textContent.includes(text), text);
+  try {
+    history.replaceState(null, '', '/');
+    await import('../src/panel/main.tsx');
+    await click(link('add'));
+    await awaitEl('#runner-source-type');
+    assert(el('.action-column #runner-installer') && !el('#nav-runners'), 'installer placement');
+    fill('#runner-source', 'pappai-runner-example@latest');
+    await wait(() => el('#runner-name').value === 'example', 'suggested name');
+    fill('#runner-name', 'demo');
+    await click('#register-runner [type=submit]');
+    await wait(() => commands.length === 1, 'start');
+    assert(commands[0].includes("'add' 'npm' 'demo'"), 'installer argv');
+    await click(link('disable'));
+    await awaitEl('#method-call');
+    terminals[0].emit('Preparing\r\nPAPPAI_RES');
+    terminals[0].emit('ULT ' + JSON.stringify({entrypoint:path}) + '\r\n');
+    assert(calls.length === 0, 'registered before process exit');
+    terminals[0].emit({exitCode:0});
+    await click(link('add'));
+    await button('Retry registration');
+    await status('demo registered.');
+    assert(commands.length === 1 && calls.length === 2, 'registration retry ran installer');
+    assert(calls.every(c => c.method === '$.runners.add' && c.data.name === 'demo' && c.data.entrypoint === path), 'wrong registration');
+    await button('Back to runner settings');
+    fill('#runner-target', 'demo');
+    await wait(() => el('#runner-source')?.value === 'pappai-runner-demo@latest', 'saved source');
+    await click('#register-runner [type=submit]');
+    await wait(() => commands.length === 2, 'start update');
+    assert(commands[1].includes("'update' 'npm' 'demo'"), 'update argv');
+    terminals[1].emit('PAPPAI_RESULT ' + JSON.stringify({entrypoint:newPath}) + '\r\n');
+    terminals[1].emit({exitCode:0});
+    await status('demo restarted.');
+    await button('Back to runner settings');
+    fill('#runner-target', 'demo');
+    await button('Roll back');
+    await status('demo restarted.');
+    assert(calls.at(-2).method === '$.runners.restart' && calls.at(-2).data.entrypoint === newPath, 'wrong update');
+    assert(calls.at(-1).method === '$.runners.restart' && calls.at(-1).data.entrypoint === path && commands.length === 2, 'wrong rollback');
+    await button('Back to runner settings');
+    fill('#runner-source-type','custom');
+    await awaitEl('#entrypoint');
+    assert(!el('#runner-name'), 'custom name must come from path');
+    const customPath = path.replace('/demo/', '/custom/');
+    fill('#entrypoint', customPath);
+    await click('#register-runner [type=submit]');
+    await status('custom registered.');
+    assert(calls.at(-1).data.name === 'custom' && commands.length === 2, 'wrong custom registration');
+    document.querySelector('output').textContent = 'pass';
+  } catch (error) {
+    document.querySelector('output').textContent = error.stack;
+  } finally {
+    await nativeFetch('/test-finished');
+  }
+</script>

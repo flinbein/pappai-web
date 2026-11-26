@@ -6,6 +6,14 @@ Open `/terminal` and use **+** to launch a command (default `/bin/sh -i`). Each 
 
 Choose a terminal theme when launching a tab or change it live with the palette button. Swipe between tabs and the launch form with two fingers. Use Ctrl+Shift+C to copy a selection or open a selectable scrollback snapshot. The package includes 12 local palettes and their [source notices](public/terminal-theme-notices.txt).
 
+## Runner installation
+
+Select the workspace node, expand **System methods**, and open `$.runners.add`. Choose an npm package specification or a Git repository with an optional ref. The installation name is editable. For an existing executable, choose **Custom path** and enter its absolute entrypoint under `/run/pappai/private/runners/<name>/`. The directory supplies the name.
+
+The embedded terminal streams preparation output. You can navigate within the workspace and reopen the method to see progress. A successful preparation registers the reported entrypoint. If registration fails, **Retry registration** reuses that entrypoint. Reloading the browser or signing out closes the terminal.
+
+To update, select an existing installation in the same form. Its saved package or repository appears when available. **Update runner** prepares the release and restarts the runner using its new entrypoint. **Roll back** restarts it with the previous entrypoint when one is available. The workspace help lists the runner methods your account can call.
+
 ## Development
 
 Use Node.js 24 LTS or later. Run `npm ci`, then `npm run dev`. For local development, start the controller on port 3000 with `PAPPAI_ORIGIN=http://localhost:5173`, then open `http://localhost:5173`. Vite forwards the API and terminal WebSocket to the controller. Use a separate development database for passkeys registered on localhost.

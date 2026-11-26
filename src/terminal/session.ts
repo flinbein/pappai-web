@@ -2,11 +2,12 @@ import {FitAddon} from '@xterm/addon-fit';
 import {Terminal} from '@xterm/xterm';
 import {encodeKey, escape, isSpecialKey, noModifiers, type Modifiers} from './keys';
 
-type TerminalEnd = {error: string} | {exitCode: number} | {disconnected: true};
+export type TerminalEnd = {error: string} | {exitCode: number} | {disconnected: true};
 type SessionEvents = {
   started(program?: string): void;
   title(value: string): void;
   closed(result: TerminalEnd): void;
+  output?(bytes: Uint8Array): void;
   modifiers(value: Modifiers): void;
   copy(): void;
   paste(): void;
@@ -114,7 +115,9 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
   }
   socket.onmessage = ({data}: MessageEvent<unknown>) => {
     if (data instanceof ArrayBuffer) {
-      term.write(new Uint8Array(data), () => {
+      const bytes = new Uint8Array(data);
+      events.output?.(bytes);
+      term.write(bytes, () => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({rendered: data.byteLength}));
       });
     } else if (typeof data === 'string') {

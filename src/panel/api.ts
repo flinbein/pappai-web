@@ -21,6 +21,9 @@ export interface Runner {
   name: string;
   available: boolean;
   enabled: boolean;
+  entrypoint?: string | null;
+  previousEntrypoint?: string | null;
+  source?: { type: 'npm' | 'git'; spec: string; ref?: string };
 }
 export interface Session {
   user: string | null;

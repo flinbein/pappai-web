@@ -1,57 +1,173 @@
-import { useEffect, useState } from 'react';
-import { call, errorMessage, formatJSON, getRunners, parseJSON } from './api';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import '@xterm/xterm/css/xterm.css';
+import { openTerminal } from '../terminal/session';
+import { call, errorMessage } from './api';
 import type { Runner } from './api';
-import { Dialog, field, Form, Submit, useMounted } from './controls';
-import type { Feedback } from './controls';
+import { Form, Submit, useMounted } from './controls';
+import { installerResult, nameFromEntrypoint, prepareCommand, runnerName, suggestedName } from './runner-install';
+import type { SourceType } from './runner-install';
+import type { InstallerProps } from './runner-installer-slot';
 
-const defaultConfig = {
-  codexExecutablePath: '/run/pappai/private/tools/codex/0.170.0/bin/codex',
-  profilesDir: '/run/pappai/private/profiles',
-  stateDir: '/run/pappai/private/state',
-};
+interface Job {
+  name: string;
+  method: string;
+  version: string;
+  command?: string;
+}
+type Phase = 'preparing' | 'calling' | 'prepare-failed' | 'call-failed' | 'done';
 
-export function Runners({ feedback }: { feedback: Feedback }) {
-  const [runners, setRunners] = useState<Runner[]>([]);
-  const [editing, setEditing] = useState(false);
-  const [error, setError] = useState('');
+function InstallerTerminal({job, ready, failed}: {job: Job; ready: (entrypoint: string) => void; failed: (error: unknown) => void}) {
+  const host = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const result = installerResult();
+    try {
+      const session = openTerminal(host.current!, 14, job.command!, false, {
+        started() {}, title() {}, modifiers() {}, paste() {},
+        copy() {
+          const selection = session.term.getSelection();
+          if (selection) void navigator.clipboard?.writeText(selection).catch(() => {});
+        },
+        output: result.write,
+        closed(end) {
+          try { ready(result.finish(end, job.name)); } catch (error) { failed(error); }
+        },
+      });
+      session.term.options.disableStdin = true;
+      return () => session.dispose();
+    } catch (error) { failed(error); }
+  }, [job, ready, failed]);
+  return <div className="managed-terminal" role="region" aria-label="Installer terminal" ref={host} />;
+}
+
+export default function RunnerInstaller({node, catalog}: InstallerProps) {
   const mounted = useMounted();
+  const [runners, setRunners] = useState<Runner[]>([]);
+  const [listError, setListError] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [selected, setSelected] = useState('');
+  const [type, setType] = useState<SourceType>('npm');
+  const [source, setSource] = useState('');
+  const [ref, setRef] = useState('');
+  const [editedName, setEditedName] = useState<string>();
+  const [job, setJob] = useState<Job>();
+  const [path, setPath] = useState('');
+  const [phase, setPhase] = useState<Phase>('preparing');
+  const [message, setMessage] = useState('');
+  const existing = runners.find(runner => runner.name === selected);
+  const method = selected ? '$.runners.restart' : '$.runners.add';
+  const get = catalog['$.runners.get'];
+  const canUpdate = get?.type === 'method' && catalog['$.runners.restart']?.type === 'method';
   useEffect(() => {
-    void getRunners().then(setRunners).catch(err => { if (mounted.current) feedback(errorMessage(err)); });
-  }, [feedback, mounted]);
-  return <>
-    <h1>Runners</h1>
-    <ul id="runner-list">{runners.map(runner => <li key={runner.name}><strong>{runner.name}</strong>
-      <span>{!runner.enabled ? 'Disabled' : runner.available ? 'Available' : 'Unavailable'}</span>
-    </li>)}</ul>
-    <button id="new-runner" onClick={() => { setError(''); setEditing(true); }}>Add runner</button>
-    {editing && <Dialog id="runner-dialog" close={() => setEditing(false)}>
-      <Form id="register-runner" feedback={setError} submit={async form => {
-        const schema = field(form, 'schema');
-        await call('~', '$.runners.add', {
-          name: field(form, 'name'), entrypoint: field(form, 'entrypoint'), config: parseJSON(field(form, 'config')),
-          ...(schema.trim() ? { settingsSchema: parseJSON(schema) } : {}),
-        });
-        setEditing(false);
-        try {
-          setRunners(await getRunners());
-        } catch (err) {
-          if (mounted.current) feedback(errorMessage(err));
-        }
+    if (get?.type !== 'method') return;
+    let active = true;
+    setListError('');
+    void call<Runner[]>(node, '$.runners.get', {}, get.version).then(value => {
+      if (active) setRunners(value);
+    }).catch(error => { if (active) setListError(errorMessage(error)); });
+    return () => { active = false; };
+  }, [node, get, revision]);
+
+  function chooseRunner(name: string) {
+    const runner = runners.find(r => r.name === name);
+    setSelected(name);
+    setType(runner?.source?.type ?? (name ? 'custom' : 'npm'));
+    setSource(runner?.source?.spec ?? '');
+    setRef(runner?.source?.ref ?? '');
+    setEditedName(undefined);
+    setMessage('');
+  }
+
+  const register = useCallback(async (task: Job, entrypoint: string) => {
+    setPath(entrypoint);
+    setPhase('calling');
+    setMessage('');
+    try {
+      await call(node, task.method, {name: task.name, entrypoint}, task.version);
+      if (!mounted.current) return;
+      setPhase('done');
+      setRevision(value => value + 1);
+    } catch (error) {
+      if (!mounted.current) return;
+      setPhase('call-failed');
+      setMessage(errorMessage(error));
+    }
+  }, [mounted, node]);
+  const ready = useCallback((entrypoint: string) => {
+    if (job) void register(job, entrypoint);
+  }, [job, register]);
+  const failed = useCallback((error: unknown) => {
+    setPhase('prepare-failed');
+    setMessage(errorMessage(error));
+  }, []);
+
+  function start(previousEntrypoint?: string) {
+    const spec = source.trim();
+    const name = selected || (type === 'custom' ? nameFromEntrypoint(spec) : (editedName ?? suggestedName(type, spec)).trim());
+    if (!runnerName.test(name)) throw Error('Use 1–64 lowercase letters, digits, underscores or hyphens, starting with a letter.');
+    if (name === 'process') throw Error('The built-in process runner cannot be installed or updated.');
+    if (!selected && runners.some(runner => runner.name === name)) throw Error('A runner with this name is already registered.');
+    const feature = catalog[method];
+    if (feature?.type !== 'method') throw Error('This method is unavailable.');
+    const task: Job = {name, method, version: feature.version};
+    let entrypoint = previousEntrypoint;
+    if (!entrypoint && type === 'custom') {
+      if (nameFromEntrypoint(spec) !== name) throw Error('Use an entrypoint under the selected installation directory.');
+      entrypoint = spec;
+    }
+    if (!entrypoint && type !== 'custom') task.command = prepareCommand(selected ? 'update' : 'add', type, name, spec, ref.trim());
+    setMessage('');
+    setPath('');
+    setPhase('preparing');
+    setJob(task);
+    if (entrypoint) void register(task, entrypoint);
+  }
+  const status = !job ? '' : phase === 'preparing' ? 'Preparing ' + job.name + '…'
+    : phase === 'calling' ? 'Calling ' + job.method + '…'
+    : phase === 'done' ? job.name + (job.method === '$.runners.add' ? ' registered.' : ' restarted.')
+    : phase === 'call-failed' ? 'Could not ' + (job.method === '$.runners.add' ? 'register ' : 'restart ') + job.name + '.'
+    : 'Preparation failed.';
+  return <section id="runner-installer">
+    <h2>{selected ? 'Update runner' : 'Install runner'}</h2>
+    {!job && <Form id="register-runner" feedback={setMessage} submit={async () => start()}>
+      {canUpdate && <label>Installation<select id="runner-target" value={selected} onChange={e => chooseRunner(e.target.value)}>
+        <option value="">New runner</option>
+        {runners.filter(r => r.name !== 'process').map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
+      </select></label>}
+      {existing?.entrypoint && <p>Current entrypoint <code>{existing.entrypoint}</code></p>}
+      <label>Source<select id="runner-source-type" value={type} onChange={e => {
+        setType(e.target.value as SourceType); setSource(''); setEditedName(undefined); setRef(''); setMessage('');
       }}>
-        <h2>Register a runner</h2>
-        <p>Enter the path to the installed runner’s entry point and its configuration on the server.</p>
-        <label>Runner name<input id="runner-name" name="name" required defaultValue="codex" /></label>
-        <label>Entry point<input id="entrypoint" name="entrypoint" required
-          defaultValue="/run/pappai/private/runners/node_modules/@flinbein/pappai-runner-codex/src/index.mjs" /></label>
-        <label>Configuration (JSON)<textarea id="runner-config" name="config" required rows={6} spellCheck={false} defaultValue={formatJSON(defaultConfig)} /></label>
-        <details><summary>APP settings schema</summary>
-          <label>JSON schema (optional)<textarea id="runner-schema" name="schema" rows={4} spellCheck={false} /></label>
-        </details>
-        <p id="runner-error" role="alert">{error}</p>
-        <div className="app-actions"><Submit>Register</Submit>
-          <button className="secondary" type="button" data-close onClick={() => setEditing(false)}>Cancel</button>
-        </div>
-      </Form>
-    </Dialog>}
-  </>;
+        <option value="npm">npm package</option><option value="git">Git repository</option><option value="custom">Custom path</option>
+      </select></label>
+      <label>{type === 'npm' ? 'Package specification' : type === 'git' ? 'HTTPS repository URL' : 'Entrypoint'}
+        <input id={type === 'custom' ? 'entrypoint' : 'runner-source'} required value={source}
+          placeholder={type === 'npm' ? '@scope/pappai-runner-example@latest' : type === 'git' ? 'https://example.org/pappai-runner-example.git' : '/run/pappai/private/runners/example/index.mjs'}
+          onChange={e => setSource(e.target.value)} />
+      </label>
+      {type === 'git' && <label>Git ref (optional)<input id="runner-ref" value={ref} onChange={e => setRef(e.target.value)} /></label>}
+      {!selected && type !== 'custom' && <label>Installation name<input id="runner-name" required maxLength={64}
+        value={editedName ?? suggestedName(type, source)} onChange={e => setEditedName(e.target.value)} /></label>}
+      <div className="app-actions">
+        <Submit>{selected ? 'Update runner' : type === 'custom' ? 'Register runner' : 'Install runner'}</Submit>
+        {existing?.previousEntrypoint && <button type="button" className="secondary"
+          title={existing.previousEntrypoint} onClick={() => {
+            try { start(existing.previousEntrypoint!); } catch (error) { setMessage(errorMessage(error)); }
+          }}>Roll back</button>}
+      </div>
+    </Form>}
+    {job?.command && <InstallerTerminal job={job} ready={ready} failed={failed} />}
+    {job && <>
+      <p id="runner-status" role="status">{status}</p>
+      {path && <p>Entrypoint <code>{path}</code></p>}
+      <div className="app-actions">
+        {phase === 'call-failed' && <button onClick={() => void register(job, path)}>Retry {job.method === '$.runners.add' ? 'registration' : 'restart'}</button>}
+        {['done', 'call-failed', 'prepare-failed'].includes(phase) && <button className="secondary" onClick={() => {
+          setJob(undefined); setMessage('');
+          if (phase === 'done') chooseRunner('');
+        }}>Back to runner settings</button>}
+      </div>
+    </>}
+    <p id="runner-error" role="alert">{message}</p>
+    {listError && <p role="alert">Could not load installed runners. {listError} <button className="secondary" onClick={() => setRevision(v => v + 1)}>Reload</button></p>}
+  </section>;
 }

@@ -7,6 +7,7 @@ import { canCreate, choices, CreateNode } from './create-node';
 import { FeatureLinks, Method } from './features';
 import { NodeActionLink } from './node-action-link';
 import { Profile } from './profile';
+import { RunnerInstallerSlot } from './runner-installer-slot';
 import type { Refresh, Reply } from './workspace';
 
 interface ChatProps {
@@ -106,6 +107,9 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
     if (!catalog) return error ? null : <p role="status">Loading actions…</p>;
     if (segments.length === 2) {
       if (section === 'methods' && name && contract) {
+        if (type === 'workspace' && name === '$.runners.add' && contract.type === 'method') {
+          return <RunnerInstallerSlot node={id} catalog={catalog} />;
+        }
         return <Method key={name} id={id} name={name} feature={contract} catalog={catalog} refresh={refresh}
           chooseFeature={feature => chooseAction('methods/' + encodeURIComponent(feature))} />;
       }

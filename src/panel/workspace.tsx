@@ -5,7 +5,7 @@ import type { DirectoryNode, Session } from './api';
 import { Action, field, Form, Submit, useMounted } from './controls';
 import type { Feedback } from './controls';
 import { NodePanel } from './node-panel';
-import { Runners } from './runners';
+import { RunnerInstallerProvider } from './runner-installer-slot';
 import { snapshotReader } from './refresh-snapshot';
 import { usePappaiEvent } from './use-pappai-event';
 
@@ -173,11 +173,10 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   }
   const selectedNode = nodes.find(node => node.id === selected);
   const account = nodes.find(node => node.id === session.user)?.name || session.user;
-  const runners = location.pathname === '/runners';
   const consoleRoute = location.pathname === '/rpc';
   const nodeRoute = !!match || location.pathname === '/';
-  const title = terminalRoute ? 'Terminal' : runners ? 'Runners' : consoleRoute ? 'RPC console' : selectedNode?.name ?? selected;
-  return <div id="workspace" data-pane={pane} data-action={Boolean(action && selectedNode)}>
+  const title = terminalRoute ? 'Terminal' : consoleRoute ? 'RPC console' : selectedNode?.name ?? selected;
+  return <RunnerInstallerProvider><div id="workspace" data-pane={pane} data-action={Boolean(action && selectedNode)}>
     <nav ref={breadcrumbs} className="breadcrumbs" aria-label="Workspace panes">
       <button aria-current={pane === 'tree' ? 'step' : undefined} onClick={() => showPane('tree')}>Workspace</button>
       {title && location.pathname !== '/' && <><span aria-hidden="true">›</span><button aria-current={pane === 'node' ? 'step' : undefined}
@@ -190,7 +189,6 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
         <summary aria-label={'Account ' + account}><span className="avatar" aria-hidden="true">{account?.slice(0,1).toUpperCase()}</span>
           <strong>{account}</strong><span className="chevron" aria-hidden="true">⌄</span></summary>
         <div className="account-items">
-          {session.canManageApps && <Link id="nav-runners" to="/runners">Runners</Link>}
           <Link id="nav-rpc" to="/rpc">RPC console</Link>
           <Action id="logout" feedback={feedback} run={signOut}>Sign out</Action>
         </div>
@@ -219,13 +217,11 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
       : <section className={pane === 'action' ? 'action-column' : 'node-column'}><p id="pick-node" role="status">{
         !directoryLoaded ? 'Loading node tree…' : selected ? 'Node unavailable.' : 'Select a node in the tree.'
       }</p></section>)}
-    {runners && <section id="runner-panel" className="node-column">{session.canManageApps
-      ? <Runners feedback={feedback} /> : <p>Access denied.</p>}</section>}
     {consoleRoute && <section id="rpc-panel" className="node-column"><Console refresh={refresh} feedback={feedback} /></section>}
     {(terminalVisited || terminalRoute) && <section className="terminal-column" hidden={!terminalRoute}>
       <Suspense fallback={<p>Loading…</p>}><TerminalTabs defaultSandbox={requestedSandbox} canChooseSandbox={session.canChooseSandbox}
         visible={terminalRoute && (!narrow || pane === 'node')} onOnlineChange={setLive} /></Suspense>
     </section>}
-    {!nodeRoute && !terminalRoute && !runners && !consoleRoute && <section className="node-column"><p>Page not found.</p><Link to="/">Workspace</Link></section>}
-  </div>;
+    {!nodeRoute && !terminalRoute && !consoleRoute && <section className="node-column"><p>Page not found.</p><Link to="/">Workspace</Link></section>}
+  </div></RunnerInstallerProvider>;
 }

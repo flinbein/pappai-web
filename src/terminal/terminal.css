@@ -3,6 +3,7 @@
   color: #e5eeec; background: #12191b; color-scheme: dark;
 }
 .terminal-tabs {
+  interpolate-size: allow-keywords;
   --tab-curve: 8px;
   --tab-stroke: 2px;
   --tab-outline: #82939b;
@@ -259,8 +260,21 @@ html:has(.terminal-deck) { overscroll-behavior-x: none; }
 .terminal-track > .terminal-frame[data-outside] { display:none !important; }
 .cli-group {
   --tab-outline: var(--group-color);
-  display: flex; flex: none; align-items: stretch; gap: 4px;
+  display: flex; flex: none; align-items: stretch;
   padding-inline: 3px; box-shadow: inset 0 -2px var(--group-color);
+}
+.strip-item, .group-reveal { display:flex; flex:none; min-width:0; width:max-content; }
+.group-reveal { overflow:clip; }
+.group-members { display:flex; flex:none; gap:4px; padding-inline-start:4px; }
+.cli-group .cli-group-toggle { gap:0; }
+.cli-group-star { padding-inline-end:.35rem; }
+.strip-item[data-closing=true], .group-reveal[inert] { width:0; opacity:0; overflow:clip; }
+.strip-item[data-closing=true] { margin-inline-end:-4px; }
+.strip-item[data-closing=true] > .cli-group .strip-item {
+  width:max-content; opacity:1; margin-inline-end:0; transition:none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .strip-item, .group-reveal { transition:width 180ms ease-out, opacity 180ms ease-out, margin-inline-end 180ms ease-out; }
 }
 .cli-group-label {
   display: flex; align-items: center; align-self: center; margin-bottom: 3px;

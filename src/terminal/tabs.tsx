@@ -12,6 +12,7 @@ import type {CliAction, TerminalStart} from './launch-input';
 
 export type TerminalState = 'connecting' | 'online' | 'closed' | 'nonzero' | 'failed';
 type TerminalTab = {
+  closing?: boolean;
   theme: ThemeName;
   id: number;
   command: TerminalStart;
@@ -73,8 +74,8 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     return true;
   });
   const slides = sections.flatMap(tab => {
-    if (action || !tab.group) return [tab.id];
-    if (expanded === tab.group) return groupTabs.get(tab.group)!.map(item => item.id);
+    if (action || !tab.group) return tab.closing ? [] : [tab.id];
+    if (expanded === tab.group) return groupTabs.get(tab.group)!.filter(item => !item.closing).map(item => item.id);
     return [];
   });
 
@@ -121,7 +122,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     return () => { bindings.abort(); controller.dispose(); carousel.current = null; };
   }, []);
   useLayoutEffect(() => { carousel.current?.sync(visible ? [...slides, null] : [], selected); });
-  const online = tabs.some(tab => tab.state === 'online');
+  const online = tabs.some(tab => !tab.closing && tab.state === 'online');
   useLayoutEffect(() => { onOnlineChange(online); }, [online, onOnlineChange]);
   useLayoutEffect(() => {
     if (visible) strip.current?.querySelector('.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true]')?.scrollIntoView({block:'nearest', inline:'nearest'});
@@ -143,17 +144,23 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   function remove(items: TerminalTab[], message: string) {
     if (items.some(live) && !window.confirm(message)) return;
     const ids = new Set(items.map(item => item.id));
-    const remaining = tabs.filter(item => !ids.has(item.id));
-    setSelections(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => {
-      if (value === null || !ids.has(value)) return [key,value];
-      const pool = remaining.filter(tab => key ? tab.group === key : !tab.group || tab.group === expanded);
-      return [key, pool.find(tab => tab.id > value)?.id ?? pool.at(-1)?.id ?? null];
-    })));
-    setTabs(remaining);
+    const remaining = tabs.filter(tab => !tab.closing && !ids.has(tab.id));
+    // Unmount the PTYs now. Only their inert strip items stay for the exit transition.
+    flushSync(() => {
+      setSelections(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => {
+        if (value === null || !ids.has(value)) return [key,value];
+        const pool = remaining.filter(tab => key ? tab.group === key : !tab.group || tab.group === expanded);
+        return [key, pool.find(tab => tab.id > value)?.id ?? pool.at(-1)?.id ?? null];
+      })));
+      setTabs(previous => previous.map(tab => ids.has(tab.id) ? {...tab, closing:true} : tab));
+    });
+    const exits = Array.from(strip.current!.querySelectorAll('.strip-item[data-closing=true]'))
+      .flatMap(item => item.getAnimations().map(animation => animation.finished));
+    void Promise.allSettled(exits).then(() => setTabs(previous => previous.filter(tab => !ids.has(tab.id))));
   }
   function moveTab(event: React.KeyboardEvent) {
     if (!(event.target instanceof HTMLElement) || event.target.getAttribute('role') !== 'tab') return;
-    const buttons = Array.from(strip.current!.querySelectorAll<HTMLButtonElement>('[role=tab]'));
+    const buttons = Array.from(strip.current!.querySelectorAll<HTMLButtonElement>('[role=tab]:not([inert] *)'));
     const index = buttons.indexOf(event.target as HTMLButtonElement);
     let next: number;
     switch (event.key) {
@@ -168,13 +175,15 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   function tabButton(tab: TerminalTab) {
     const title = tab.title || tab.program;
     const status = tab.state === 'failed' ? 'error' : tab.detail;
-    return <div key={tab.id} className="terminal-tab-group" style={themeStyle(tab.theme)} data-selected={selected === tab.id}>
-      <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab" data-terminal={tab.id} data-state={tab.state}
-        aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => select(tab.id, tab.group)}>
-        <span className="terminal-tab-dot" role="img" title={status} aria-label={status}/><span className="terminal-tab-title">{title}</span>
-      </button>
-      <button type="button" className="terminal-tab-close" data-close-terminal={tab.id} aria-label={'Close terminal ' + tab.id}
-        onClick={() => remove([tab], 'Close this terminal and end its running process?')}><span>×</span></button>
+    return <div key={tab.id} className="strip-item" inert={tab.closing} data-closing={tab.closing}>
+      <div className="terminal-tab-group" style={themeStyle(tab.theme)} data-selected={selected === tab.id}>
+        <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab" data-terminal={tab.id} data-state={tab.state}
+          aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => select(tab.id, tab.group)}>
+          <span className="terminal-tab-dot" role="img" title={status} aria-label={status}/><span className="terminal-tab-title">{title}</span>
+        </button>
+        <button type="button" className="terminal-tab-close" data-close-terminal={tab.id} aria-label={'Close terminal ' + tab.id}
+          onClick={() => remove([tab], 'Close this terminal and end its running process?')}><span>×</span></button>
+      </div>
     </div>;
   }
   return <div className="terminal-workspace" ref={workspace}>
@@ -183,32 +192,46 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
         if (action || !tab.group || !('cli' in tab.command)) return tabButton(tab);
         const group = tab.group;
         const items = groupTabs.get(group)!;
+        const available = items.filter(item => !item.closing);
         const open = expanded === group;
         const groupActive = items.some(item => item.id === selected);
         const {node, method} = tab.command.cli;
         const name = nodes.find(entry => entry.id === node)?.name ?? tab.nodeName ?? 'Unknown node';
         const label = method + ' · ' + name;
         const status = groupStatus(items);
-        return <div key={group} className="cli-group" style={groupStyle(group)} data-expanded={open}>
-          <div className="cli-group-label">
-          <button type="button" role="tab" className="cli-group-toggle" data-state={status} data-cli-group={group} aria-label={label} title={label}
-            aria-selected={false} aria-expanded={open} onClick={() => {
-              if (open) {
-                setExpanded(undefined);
-                if (groupActive) select(null);
+        return <div key={group} className="strip-item" inert={!available.length} data-closing={!available.length}>
+          <div className="cli-group" style={groupStyle(group)} data-expanded={open}>
+            <div className="cli-group-label">
+              <button type="button" role="tab" className="cli-group-toggle" data-state={status} data-cli-group={group}
+                aria-label={label} title={label} aria-selected={false} aria-expanded={open} onClick={() => {
+                  if (open) {
+                    setExpanded(undefined);
+                    if (groupActive) select(null);
+                  } else select(available.find(item => item.id === selections[group])?.id ?? available[0].id, group);
+                }}>
+                <span className="group-reveal" inert={open}><span className="cli-group-star" role="img" title={status} aria-label={status}>★</span></span>
+                <span>{label}</span>
+              </button>
+              <div className="group-reveal" inert={open}>
+                <button type="button" className="terminal-tab-close" data-close-group={group} aria-label={'Close group ' + label}
+                  onClick={() => remove(available, 'Close all terminals in ' + label + ' and end their running processes?')}>×</button>
+              </div>
+            </div>
+            <div className="group-reveal" inert={!open} onTransitionEnd={event => {
+              if (open && event.target === event.currentTarget && event.propertyName === 'width') {
+                event.currentTarget.querySelector('[data-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});
               }
-              else select(items.find(item => item.id === selections[group])?.id ?? items[0].id, group);
-            }}>{!open && <span className="cli-group-star" role="img" title={status} aria-label={status}>★</span>}
-            <span>{label}</span></button>
-          {!open && <button type="button" className="terminal-tab-close" data-close-group={group} aria-label={'Close group ' + label}
-            onClick={() => remove(items, 'Close all terminals in ' + label + ' and end their running processes?')}>×</button>}
-        </div>{open && items.map(tabButton)}</div>;
+            }}>
+              <div className="group-members">{items.map(tabButton)}</div>
+            </div>
+          </div>
+        </div>;
       })}
       <button id="new-terminal" type="button" role="tab" aria-controls="terminal-launch" aria-selected={selected === null}
         aria-label="New terminal" title="New terminal" onClick={() => select(null)}><span>+</span></button>
     </div>
     <div className="terminal-deck"><div className="terminal-track" ref={track}>
-      {tabs.map(tab => {
+      {tabs.filter(tab => !tab.closing).map(tab => {
         const active = visible && selected === tab.id;
         const position = slides.indexOf(tab.id);
         if (tab.state === 'failed') return <div key={tab.id} className="terminal-frame terminal-failed-frame" data-outside={position < 0 || undefined}

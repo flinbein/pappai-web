@@ -46,6 +46,15 @@
     }
     throw Error('Timeout: ' + message);
   }
+  const motion = matchMedia('(prefers-reduced-motion: no-preference)').matches;
+  async function checkWidthTransition(item, fullWidth) {
+    const transition = await wait(() => item.getAnimations().find(a => a.transitionProperty === 'width'), 'width transition');
+    transition.pause();
+    transition.currentTime = transition.effect.getTiming().duration / 2;
+    const width = item.getBoundingClientRect().width;
+    assert(width > 0 && width < fullWidth, 'tab strip has an intermediate width');
+    transition.finish();
+  }
   const click = async selector => (await wait(() => el(selector),selector)).click();
   function fill(selector, value) {
     const node = el(selector);
@@ -58,7 +67,9 @@
     await click('#start-terminal');
     await wait(() => sockets[id-1]?.request && selection(id),'session '+id);
   }
+  const reducedTest = location.search === '?reduced';
   try {
+    if (reducedTest) assert(!motion, 'browser emulates reduced motion');
     history.replaceState(null,'','/nodes/profile-demo');
     await import('../src/panel/main.tsx');
     await click('[data-cli-method=inspect]');
@@ -94,13 +105,17 @@
     const group = selector => all('[data-cli-group]').find(node=>node.getAttribute('aria-label').includes(selector));
     assert(group('inspect').dataset.state==='online' && group('report').dataset.state==='connecting','group status priority');
     assert(group('inspect').querySelector('.cli-group-star').textContent === '★','group status star');
+    const members = group('inspect').closest('.cli-group').querySelector('.group-members');
+    assert(members.parentElement.getBoundingClientRect().width === 0,'initially collapsed');
     group('inspect').click();
+    if (motion) await checkWidthTransition(members.parentElement, members.getBoundingClientRect().width);
     await click('[data-terminal="1"]');
-    assert(group('inspect').textContent === 'inspect · Demo','expanded group label');
+    assert(group('inspect').lastElementChild.textContent === 'inspect · Demo','expanded group label');
     assert(group('inspect').closest('.cli-group').querySelectorAll('[data-terminal]').length===2,'outlined group contains both tabs');
     await wait(() => active()===first,'same xterm across routes');
     group('inspect').click();
-    await wait(() => all('[data-terminal]').length===0 && el('#new-terminal[aria-selected=true]'),'collapse selects launcher');
+    await wait(() => all('[data-terminal]:not([inert] *)').length===0 && el('#new-terminal[aria-selected=true]'),'collapse selects launcher');
+    if (motion) await checkWidthTransition(members.parentElement, members.getBoundingClientRect().width);
     assert(all('.terminal-frame:not([data-outside])').length===0 && !active(),'carousel excludes both collapsed groups');
     await wait(() => el('#terminal-command')?.value==='/bin/sh -i','global shell form');
     assert(el('#start-terminal').textContent === 'Start','shell submit label');
@@ -127,11 +142,22 @@
     const headers=all('[data-cli-group]');
     assert(headers.every(header=>header.getAttribute('aria-label')==='report · Demo'), 'method followed by node name');
     assert(new Set(headers.map(header=>header.dataset.cliGroup)).size===2,'distinct group identities');
-    assert(selection(5) && !el('[data-terminal="3"]'),'only the selected group is expanded');
+    assert(selection(5) && !el('[data-terminal="3"]:not([inert] *)'),'only the selected group is expanded');
     await click('[data-terminal="4"]');
     headers.find(header=>header.getAttribute('aria-expanded')==='true').click();
     await wait(() => selection(4) && all('.terminal-frame:not([data-outside])').length===1,'collapsing another group preserves selection');
+    const shellItem = selection(4).closest('.strip-item');
+    const shellWidth = shellItem.getBoundingClientRect().width;
+    const launcher = el('#new-terminal');
+    const position = () => launcher.getBoundingClientRect().left + launcher.parentElement.scrollLeft;
+    const beforeClose = position();
     await click('[data-close-terminal="4"]');
+    assert(sockets[3].readyState === 3, 'closing disconnects immediately');
+    if (motion) {
+      await checkWidthTransition(shellItem, shellWidth);
+    } else assert(shellItem.getBoundingClientRect().width === 0, 'immediate removal with reduced motion');
+    await wait(() => !shellItem.isConnected,'exit complete');
+    assert(position() < beforeClose, 'next tab occupies the released space');
     await wait(() => el('#new-terminal[aria-selected=true]'),'closing shell skips collapsed groups');
     document.querySelector('output').textContent='pass';
   } catch(error) {document.querySelector('output').textContent=error.stack;}

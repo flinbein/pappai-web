@@ -16,9 +16,10 @@ const chrome = [process.env.PAPPAI_CHROME_BIN,
   '/usr/bin/google-chrome', '/usr/bin/chromium',
 ].find(path => path && existsSync(path));
 
-for (const [fixture, title] of [
+for (const [fixture, title, reducedMotion] of [
   ['hook', 'React event hook orders registration before effects, updates callbacks and cleans up'],
   ['cli', 'CLI and shell terminals share sessions across routes, validate launch inputs and close groups'],
+  ['cli', 'Terminal groups and tabs close immediately with reduced motion', true],
   ['runner', 'Workspace runner preparation survives navigation and retries registration without reinstalling'],
 ]) test(title, {
   skip: chrome ? false : 'Set PAPPAI_CHROME_BIN to run this Chromium test',
@@ -46,7 +47,8 @@ for (const [fixture, title] of [
     '--headless', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run',
     '--no-default-browser-check', '--user-data-dir=' + join(temp, 'chrome'),
     ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
-    '--dump-dom', 'http://127.0.0.1:' + port + '/tests/' + fixture + '.html',
+    ...(reducedMotion ? ['--force-prefers-reduced-motion=reduce'] : []),
+    '--dump-dom', 'http://127.0.0.1:' + port + '/tests/' + fixture + '.html' + (reducedMotion ? '?reduced' : ''),
   ], { windowsHide: true, timeout: 45000 });
   assert.equal(stdout.match(/<output>([\s\S]*?)<\/output>/)?.[1], 'pass');
 });

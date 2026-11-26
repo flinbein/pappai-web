@@ -1,3 +1,4 @@
+import {bindTerminalActivation} from './activation';
 import type {TerminalStart} from './launch-input';
 import {useCallback, useLayoutEffect, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
@@ -44,8 +45,6 @@ export function TerminalView({id, command, port, owner, epoch, position, visible
   const shared = !!port;
   const live = connection === 'connecting' || connection === 'online';
   const readOnly = shared && !owner && live;
-  const consumedEnter = useRef(false);
-  const takeButton = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -206,6 +205,10 @@ export function TerminalView({id, command, port, owner, epoch, position, visible
     };
   }, [visible, sandbox, copy, paste, report, setCopyView, setNativePaste, carousel, readOnly, epoch, owner]);
 
+  useLayoutEffect(() => {
+    if (port && visible && live) return bindTerminalActivation(root.current!, () => session.current?.take?.());
+  }, [port, visible, live]);
+
   function font(size: number) {
     const current = session.current;
     if (!current) return;
@@ -236,22 +239,9 @@ export function TerminalView({id, command, port, owner, epoch, position, visible
   return <div className="terminal-frame" data-outside={position < 0 || undefined} style={{order:position}} inert={!visible} hidden={!visible} id={'terminal-panel-' + id}
     role="tabpanel" aria-labelledby={'terminal-tab-' + id}>
     <div ref={root} className="terminal-view" data-readonly={readOnly || undefined}
-      onKeyDownCapture={event => {
-        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
-        if (!event.repeat) consumedEnter.current = false;
-        if (!readOnly && !consumedEnter.current) return;
-        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (!event.repeat) { consumedEnter.current = true; takeButton.current?.click(); }
-      }} onKeyUpCapture={event => {
-        if (event.key === 'Enter' && consumedEnter.current) {
-          consumedEnter.current = false;
-          event.preventDefault();event.stopPropagation();
-        }
-      }} style={themeStyle(theme)} tabIndex={-1} aria-label="Terminal">
+      style={themeStyle(theme)} tabIndex={-1} aria-label="Terminal">
       <span ref={screenNotice} className="terminal-screen-notice" role="status"/>
-      <div inert={!!copyView} ref={screen} onPointerDown={() => { if (readOnly) root.current?.focus({preventScroll:true}); }} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
+      <div inert={!!copyView} ref={screen} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
         <div ref={host} className="terminal-host" inert={readOnly}/>
       </div>
       <div inert={!!copyView} ref={handles} className="terminal-handles">
@@ -305,8 +295,6 @@ export function TerminalView({id, command, port, owner, epoch, position, visible
           dismissPaste();
         }}/>}
       </div>
-      {readOnly && <div className="terminal-take-control"><button type="button" ref={takeButton}
-        onClick={() => session.current?.take?.()}>Take control (↵)</button></div>}
       {visible && !readOnly && copyView && <CopyMode view={copyView} onClose={() => {
         flushSync(() => setCopyView(null));
         if (session.current?.visible()) {

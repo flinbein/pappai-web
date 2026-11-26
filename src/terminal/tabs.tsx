@@ -233,7 +233,10 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     return <div key={tab.id} className="strip-item" inert={tab.closing} data-closing={tab.closing}>
       <div className="terminal-tab-group" style={themeStyle(tab.theme)} data-selected={selected === tab.id}>
         <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab" data-terminal={tab.id} data-state={tab.state}
-          aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => select(tab.id, tab.group)}>
+          aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => {
+            if (selected === tab.id && port && !tab.owner && live(tab)) post({type:'terminal.take',id:tab.id});
+            select(tab.id, tab.group);
+          }}>
           <span className="terminal-tab-dot" role="img" title={status} aria-label={status}/><span className="terminal-tab-title">{title}</span>
         </button>
         <button type="button" className="terminal-tab-close" data-close-terminal={tab.id} aria-label={'Close terminal ' + tab.id}

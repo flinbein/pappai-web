@@ -312,8 +312,3 @@ html:has(.terminal-deck) { overscroll-behavior-x: none; }
   content:''; position:absolute; inset:0; pointer-events:none;
   background:repeating-linear-gradient(135deg,transparent 0 8px,color-mix(in srgb,var(--term-fg) 7%,transparent) 8px 9px);
 }
-.terminal-take-control {
-  display:flex; justify-content:center; flex:none; background:var(--term-panel);
-  padding:3px 4px max(3px,var(--terminal-safe,env(safe-area-inset-bottom))); border-top:1px solid var(--term-edge);
-}
-.terminal-take-control button { min-height:2rem; }

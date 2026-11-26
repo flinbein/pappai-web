@@ -6,7 +6,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; }
-@scope (#root) to (.terminal-column, .managed-terminal) {
+@scope (#root) to (.terminal-column, .managed-terminal, .terminal-outlet) {
 h1,h2,p { margin: 0 0 .9rem; }
 h1 { font-size: clamp(1.8rem,3vw,2.45rem); line-height: 1.15; letter-spacing: -.035em; overflow-wrap: anywhere; }
 h2 { font-size: 1.13rem; font-weight: 650; }
@@ -110,3 +110,6 @@ dialog::backdrop { background: #142b3b70; }
   .directory,.action-column { border:0; }
   .tools { padding-bottom:max(.5rem,env(safe-area-inset-bottom)); }
 }
+
+.terminal-portal,.terminal-outlet { height:100%; min-height:0; }
+.cli-action-column { padding:0; overflow:hidden; }

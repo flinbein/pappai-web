@@ -10,11 +10,11 @@ export interface DirectoryNode {
   status?: Status;
 }
 export interface Feature {
-  type: 'method' | 'event' | 'document';
+  type: 'method' | 'cli' | 'event' | 'document';
   version: string;
   description: string;
   doc?: string;
-  schema?: unknown;
+  schema?: {input?: unknown; output?: unknown};
 }
 export type Catalog = Record<string, Feature>;
 export interface Runner {

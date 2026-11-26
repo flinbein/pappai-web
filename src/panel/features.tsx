@@ -9,7 +9,7 @@ import type { Refresh } from './workspace';
 const headings = ['Application methods', 'System methods', 'Events', 'Articles'];
 
 function featureGroup(name: string, feature: Feature) {
-  if (feature.type === 'method') return name.startsWith('$.') ? 1 : 0;
+  if (feature.type === 'method' || feature.type === 'cli') return name.startsWith('$.') ? 1 : 0;
   return feature.type === 'event' ? 2 : 3;
 }
 

@@ -1,0 +1,116 @@
+<!doctype html>
+<div id="root"></div><output></output><img hidden src="/test-pending" alt="">
+<script type="module">
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (url, options) => url === '/api/session'
+    ? Promise.resolve(Response.json({user:'test', canManageApps:false, canChooseSandbox:true})) : nativeFetch(url, options);
+  const workspace = {id:'~',parentId:null,type:'workspace',name:'Workspace'};
+  const profile = {id:'profile-demo',parentId:'~',type:'profile',name:'Demo'};
+  const catalog = {
+    inspect:{type:'cli',version:'1',description:'Inspect this profile',schema:{input:{type:'object',properties:{args:{type:'array',items:{enum:['valid']}},env:{type:'object',additionalProperties:{type:'string'}}},additionalProperties:false}}},
+    report:{type:'cli',version:'1',description:'Print report',schema:{input:{type:'object',additionalProperties:false}}}
+  };
+  let confirms = 0, accept = false;
+  window.confirm = () => { confirms++; return accept; };
+  const sockets = [];
+  class Socket {
+    static OPEN = 1;
+    readyState = 0;
+    constructor(url) {
+      this.terminal = String(url).includes('/api/ws/terminal');
+      if (this.terminal) sockets.push(this);
+      queueMicrotask(() => { this.readyState = 1; this.onopen?.(); });
+    }
+    send(raw) {
+      if (typeof raw !== 'string') return;
+      const msg = JSON.parse(raw);
+      if (this.terminal) {
+        if (msg.argv || msg.cli) this.request = msg;
+        return;
+      }
+      const result = msg.method === 'discover' ? [workspace,profile] : msg.method === 'help' && msg.params.node === profile.id ? catalog : {};
+      queueMicrotask(() => this.emit({jsonrpc:'2.0', id:msg.id, result}));
+    }
+    emit(msg) {this.onmessage?.({data:JSON.stringify(msg)});}
+    close() {this.readyState = 3;}
+  }
+  window.WebSocket = Socket;
+  const el = selector => document.querySelector(selector);
+  const all = selector => [...document.querySelectorAll(selector)];
+  function assert(ok, message) {if (!ok) throw Error(message);}
+  async function wait(check, message) {
+    for(let i=0; i<300; i++) {
+      const result = check(); if (result) return result;
+      await new Promise(resolve => setTimeout(resolve,15));
+    }
+    throw Error('Timeout: ' + message);
+  }
+  const click = async selector => (await wait(() => el(selector),selector)).click();
+  function fill(selector, value) {
+    const node = el(selector);
+    Object.getOwnPropertyDescriptor(node instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,'value').set.call(node,value);
+    node.dispatchEvent(new Event('input',{bubbles:true}));
+  }
+  const active = () => el('.terminal-frame:not([hidden]) .xterm');
+  const selection = id => el('[data-terminal="'+id+'"][aria-selected=true]');
+  async function launch(id) {
+    await click('#start-terminal');
+    await wait(() => sockets[id-1]?.request && selection(id),'session '+id);
+  }
+  try {
+    history.replaceState(null,'','/nodes/profile-demo');
+    await import('../src/panel/main.tsx');
+    await click('[data-cli-method=inspect]');
+    await wait(() => el('#terminal-command'),'CLI form');
+    assert(!el('#terminal-sandbox') && el('.cli-launch-context').textContent.includes(profile.id),'action context');
+    fill('#terminal-command','invalid');
+    await wait(() => el('#start-terminal').disabled && el('#terminal-command[aria-invalid=true]'),'invalid schema');
+    assert(sockets.length===0, 'invalid action opened a socket');
+    await click('#terminal-arguments-mode');
+    await wait(() => el('[aria-label="Argument 0"][aria-invalid=true]'),'invalid structured row');
+    fill('[aria-label="Argument 0"]','valid');
+    await click('.launch-environment summary');
+    await click('.launch-environment .launch-rows > button');
+    await wait(() => el('[aria-label="Environment name 1"]'),'env');
+    fill('[aria-label="Environment name 1"]','LANG');
+    fill('[aria-label="Environment value 1"]','en');
+    await wait(() => !el('#start-terminal').disabled,'valid input');
+    await launch(1);
+    assert(JSON.stringify(sockets[0].request.cli)===JSON.stringify({node:profile.id,method:'inspect',input:{args:['valid'],env:{LANG:'en'}}}),'CLI frame');
+    sockets[0].emit({started:true,program:'tool'});
+    const first = active();
+    await click('#new-terminal');
+    await launch(2);
+    assert(JSON.stringify(sockets[1].request.cli.input)==='{}','empty optional fields');
+    sockets[1].emit({exitCode:5});
+    await click('[data-cli-method=report]');
+    await wait(() => el('.cli-launch-context')?.textContent.includes('report'),'second action form');
+    assert(!el('#terminal-command') && !el('.launch-environment') && !el('[data-terminal]'),'forbidden fields / scoped tabs');
+    await launch(3);
+    await click('#nav-terminal');
+    await wait(() => all('[data-cli-group]').length===2,'global groups');
+    const group = selector => all('[data-cli-group]').find(node=>node.getAttribute('aria-label').includes(selector));
+    assert(group('inspect').dataset.state==='online' && group('report').dataset.state==='connecting','group status priority');
+    group('inspect').click();
+    await click('[data-terminal="1"]');
+    await wait(() => active()===first,'same xterm across routes');
+    group('inspect').click();
+    await wait(() => all('[data-terminal]').length===0 && active()===first,'collapse retaining screen');
+    await click('#new-terminal');
+    await wait(() => el('#terminal-command')?.value==='/bin/sh -i','global shell form');
+    await launch(4);
+    assert(JSON.stringify(sockets[3].request.argv)==='["/bin/sh","-i"]' && !sockets[3].request.cli,'shell frame');
+    group('inspect').click();
+    await wait(() => selection(1) && active()===first,'remember child');
+    await click('[data-close-terminal="1"]');
+    assert(confirms===1 && sockets[0].readyState===1,'cancel individual close');
+    await click('[data-close-group]');
+    assert(confirms===2 && sockets[0].readyState===1,'cancel group close');
+    accept=true;
+    await click('[data-close-group]');
+    await wait(() => !group('inspect') && sockets[0].readyState===3,'group removed');
+    assert(sockets.length===4 && all('#new-terminal').length===1 && sockets[2].readyState===1 && sockets[3].readyState===1,'unrelated sockets survived');
+    document.querySelector('output').textContent='pass';
+  } catch(error) {document.querySelector('output').textContent=error.stack;}
+  finally {await nativeFetch('/test-finished');}
+</script>

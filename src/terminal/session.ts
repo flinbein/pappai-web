@@ -1,3 +1,4 @@
+import type {TerminalStart} from './launch-input';
 import {FitAddon} from '@xterm/addon-fit';
 import {Terminal} from '@xterm/xterm';
 import {encodeKey, escape, isSpecialKey, noModifiers, type Modifiers} from './keys';
@@ -15,7 +16,7 @@ type SessionEvents = {
 
 export const defaultFontSize = 16;
 
-export function openTerminal(screen: HTMLElement, fontSize: number, command: string, sandbox: boolean, events: SessionEvents) {
+export function openTerminal(screen: HTMLElement, fontSize: number, command: string | TerminalStart, sandbox: boolean, events: SessionEvents) {
   const term = new Terminal({
     cursorBlink: true, fontSize, fontFamily: 'monospace', scrollback: 3000,
     theme: {background: '#12191b', foreground: '#e5eeec', selectionBackground: '#387466'},
@@ -102,7 +103,8 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
   socket.onopen = () => {
     const dimensions = {cols: term.cols, rows: term.rows};
     lastSize = JSON.stringify(dimensions);
-    socket.send(JSON.stringify({command, ...dimensions}));
+    const start = typeof command === 'string' ? {command} : command;
+    socket.send(JSON.stringify({...start, ...dimensions}));
   };
   function finish(result: TerminalEnd) {
     if (finished) return;

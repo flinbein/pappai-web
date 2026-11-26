@@ -18,6 +18,7 @@ const chrome = [process.env.PAPPAI_CHROME_BIN,
 
 for (const [fixture, title] of [
   ['hook', 'React event hook orders registration before effects, updates callbacks and cleans up'],
+  ['cli', 'CLI and shell terminals share sessions across routes, validate launch inputs and close groups'],
   ['runner', 'Workspace runner preparation survives navigation and retries registration without reinstalling'],
 ]) test(title, {
   skip: chrome ? false : 'Set PAPPAI_CHROME_BIN to run this Chromium test',

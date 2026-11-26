@@ -1,5 +1,5 @@
 import { Link, useLocation, useMatch, useNavigate } from 'react-router';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { errorMessage, formatJSON, parseJSON, rpc } from './api';
 import type { DirectoryNode, Session } from './api';
 import { Action, field, Form, Submit, useMounted } from './controls';
@@ -7,9 +7,9 @@ import type { Feedback } from './controls';
 import { NodePanel } from './node-panel';
 import { RunnerInstallerProvider } from './runner-installer-slot';
 import { snapshotReader } from './refresh-snapshot';
+import { TerminalProvider, TerminalSlot } from './terminal-slot';
 import { usePappaiEvent } from './use-pappai-event';
 
-const TerminalTabs = lazy(() => import('../terminal/tabs'));
 type Pane = 'tree' | 'node' | 'action';
 const narrowScreen = matchMedia('(max-width: 45rem)');
 function subscribeWidth(notify: () => void) {
@@ -91,7 +91,6 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const action = match ? location.pathname.split('/').slice(3).join('/').replace(/\/$/, '') : '';
   const terminalRoute = location.pathname === '/terminal';
   const requestedSandbox = new URLSearchParams(location.search).get('sandbox') === '1';
-  const [terminalVisited, setTerminalVisited] = useState(terminalRoute);
   const [live, setLive] = useState(false);
   const [view, setView] = useState<{key: string; pane: Pane}>();
   const narrow = useSyncExternalStore(subscribeWidth, () => narrowScreen.matches);
@@ -104,7 +103,6 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const showPane = (next: Pane) => setView({ key: location.key, pane: next });
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (menu.current) menu.current.open = false; }, [location.key]);
-  useEffect(() => { if (terminalRoute) setTerminalVisited(true); }, [terminalRoute]);
   const [folded, setFolded] = useState(new Set<string>());
   const [replies, setReplies] = useState<Record<string, Reply>>({});
   const directory = useRef<DirectoryNode[]>([]);
@@ -176,7 +174,9 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const consoleRoute = location.pathname === '/rpc';
   const nodeRoute = !!match || location.pathname === '/';
   const title = terminalRoute ? 'Terminal' : consoleRoute ? 'RPC console' : selectedNode?.name ?? selected;
-  return <RunnerInstallerProvider><div id="workspace" data-pane={pane} data-action={Boolean(action && selectedNode)}>
+  return <TerminalProvider defaultSandbox={requestedSandbox} canChooseSandbox={session.canChooseSandbox}
+    shellVisible={terminalRoute && (!narrow || pane === 'node')} actionVisible={nodeRoute && (!narrow || pane === 'action')}
+    onOnlineChange={setLive}><RunnerInstallerProvider><div id="workspace" data-pane={pane} data-action={Boolean(action && selectedNode)}>
     <nav ref={breadcrumbs} className="breadcrumbs" aria-label="Workspace panes">
       <button aria-current={pane === 'tree' ? 'step' : undefined} onClick={() => showPane('tree')}>Workspace</button>
       {title && location.pathname !== '/' && <><span aria-hidden="true">›</span><button aria-current={pane === 'node' ? 'step' : undefined}
@@ -218,10 +218,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
         !directoryLoaded ? 'Loading node tree…' : selected ? 'Node unavailable.' : 'Select a node in the tree.'
       }</p></section>)}
     {consoleRoute && <section id="rpc-panel" className="node-column"><Console refresh={refresh} feedback={feedback} /></section>}
-    {(terminalVisited || terminalRoute) && <section className="terminal-column" hidden={!terminalRoute}>
-      <Suspense fallback={<p>Loading…</p>}><TerminalTabs defaultSandbox={requestedSandbox} canChooseSandbox={session.canChooseSandbox}
-        visible={terminalRoute && (!narrow || pane === 'node')} onOnlineChange={setLive} /></Suspense>
-    </section>}
+    {terminalRoute && <section className="terminal-column"><TerminalSlot/></section>}
     {!nodeRoute && !terminalRoute && !consoleRoute && <section className="node-column"><p>Page not found.</p><Link to="/">Workspace</Link></section>}
-  </div></RunnerInstallerProvider>;
+  </div></RunnerInstallerProvider></TerminalProvider>;
 }

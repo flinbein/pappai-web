@@ -1,3 +1,4 @@
+import type {TerminalStart} from './launch-input';
 import {useCallback, useLayoutEffect, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
 import '@xterm/xterm/css/xterm.css';
@@ -20,7 +21,8 @@ interface TerminalProps {
   onThemeChange(theme: ThemeName): void;
   carousel?: {readonly current: TabCarousel | null};
   id: number;
-  command: string;
+  command: TerminalStart;
+  position: number;
   visible: boolean;
   sandbox: boolean;
   connection: TerminalState;
@@ -35,7 +37,7 @@ function savedFontSize() {
   return defaultFontSize;
 }
 
-export function TerminalView({id, command, visible, sandbox, connection, update, carousel, theme, onThemeChange}: TerminalProps) {
+export function TerminalView({id, command, position, visible, sandbox, connection, update, carousel, theme, onThemeChange}: TerminalProps) {
   const root = useRef<HTMLDivElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -212,7 +214,7 @@ export function TerminalView({id, command, visible, sandbox, connection, update,
   }
   const online = connection === 'online';
   const control = (name: string) => ({id: visible ? name : undefined, 'data-control': name});
-  return <div className="terminal-frame" inert={!visible} hidden={!visible} id={'terminal-panel-' + id}
+  return <div className="terminal-frame" data-outside={position < 0 || undefined} style={{order:position}} inert={!visible} hidden={!visible} id={'terminal-panel-' + id}
     role="tabpanel" aria-labelledby={'terminal-tab-' + id}>
     <div ref={root} className="terminal-view" style={themeStyle(theme)} tabIndex={-1} aria-label="Terminal">
       <span ref={screenNotice} className="terminal-screen-notice" role="status"/>

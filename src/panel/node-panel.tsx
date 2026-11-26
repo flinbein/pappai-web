@@ -6,6 +6,7 @@ import { AppManagement } from './app-management';
 import { canCreate, choices, CreateNode } from './create-node';
 import { FeatureLinks, Method } from './features';
 import { NodeActionLink } from './node-action-link';
+import { TerminalSlot } from './terminal-slot';
 import { Profile } from './profile';
 import { RunnerCatalogRevision, RunnerInstallerSlot } from './runner-installer-slot';
 import type { Refresh, Reply } from './workspace';
@@ -109,6 +110,7 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
     if (!catalog) return error ? null : <p role="status">Loading actions…</p>;
     if (segments.length === 2) {
       if (section === 'methods' && name && contract) {
+        if (contract.type === 'cli') return <TerminalSlot node={id} method={name} schema={contract.schema?.input} description={contract.description} doc={contract.doc}/>;
         if (type === 'workspace' && name === '$.runners.add' && contract.type === 'method') {
           return <RunnerInstallerSlot node={id} catalog={catalog} />;
         }
@@ -139,6 +141,8 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
           {chat && <li><NodeActionLink {...navigation} id="show-chat" path="chat">Message agent</NodeActionLink></li>}
           {manageApp && <li><NodeActionLink {...navigation} id="show-management" path="manage">Manage APP</NodeActionLink></li>}
           {type === 'profile' && <li><NodeActionLink {...navigation} id="show-profile" path="profile">Profile settings</NodeActionLink></li>}
+          {type === 'profile' && Object.entries(catalog ?? {}).filter(([, feature]) => feature.type === 'cli').map(([method]) =>
+            <li key={method}><NodeActionLink {...navigation} cliMethod={method} path={'methods/' + encodeURIComponent(method)}>{method}</NodeActionLink></li>)}
           {createChoices.map(([value, label], index) => <li key={value}>
             <NodeActionLink {...navigation} id={index === 0 ? 'new-node' : undefined} path={'create/' + value}>Create {label}</NodeActionLink>
           </li>)}
@@ -147,7 +151,7 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
       {catalog ? <FeatureLinks {...navigation} catalog={catalog} /> : !error && <p role="status">Loading help…</p>}
       {!action && <p id="node-error" role="alert">{error}</p>}
     </section>
-    {action && <section className="action-column" aria-label="Node action">
+    {action && <section className={'action-column' + (section === 'methods' && contract?.type === 'cli' ? ' cli-action-column' : '')} aria-label="Node action">
       {renderAction()}
       <p id="node-error" role="alert">{error}</p>
     </section>}

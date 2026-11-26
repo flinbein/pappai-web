@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { errorMessage, getSession, login, logout, recover, register, startPanelConnection, stopPanelConnection } from './api';
 import type { Session } from './api';
@@ -44,12 +45,12 @@ function Panel() {
     const next = await getSession();
     if (attempt !== revision.current) return;
     if (next.user) {
-      startPanelConnection(next.user, () => {
+      startPanelConnection(next.user, reason => {
         revision.current++;
         stopPanelConnection();
         setSession({ user: null, canChooseSandbox: false, canManageApps: false });
-        setNotice('Your session has ended. Sign in again.');
-      });
+        setNotice(reason ?? 'Your session has ended. Sign in again.');
+      }, next.browserSession);
     } else {
       stopPanelConnection();
     }
@@ -57,14 +58,28 @@ function Panel() {
     setNotice('');
   }, []);
   useEffect(() => {
-    void reload().catch(error => setNotice(errorMessage(error)));
-    return () => { revision.current++; stopPanelConnection(); };
+    const load = () => void reload().catch(error => setNotice(errorMessage(error)));
+    const leave = () => { revision.current++; stopPanelConnection(); };
+    const restore = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        flushSync(() => setSession(undefined));
+        load();
+      }
+    };
+    load();
+    window.addEventListener('pagehide', leave);
+    window.addEventListener('pageshow', restore);
+    return () => {
+      window.removeEventListener('pagehide', leave);
+      window.removeEventListener('pageshow', restore);
+      leave();
+    };
   }, [reload]);
 
   return <>
     <main>
       {session && (session.user
-        ? <Workspace key={session.user} session={session} feedback={setNotice} signOut={async () => { await logout(); await reload(); }} />
+        ? <Workspace key={session.browserSession ?? session.user} session={session} feedback={setNotice} signOut={async () => { await logout(); await reload(); }} />
         : <SignIn reload={reload} feedback={setNotice} />)}
       <p id="notice" role="status">{notice}</p>
     </main>

@@ -21,7 +21,10 @@ interface TerminalProps {
   onThemeChange(theme: ThemeName): void;
   carousel?: {readonly current: TabCarousel | null};
   id: number;
-  command: TerminalStart;
+  command?: TerminalStart;
+  port?: MessagePort;
+  owner?: boolean;
+  epoch?: number;
   position: number;
   visible: boolean;
   sandbox: boolean;
@@ -37,7 +40,12 @@ function savedFontSize() {
   return defaultFontSize;
 }
 
-export function TerminalView({id, command, position, visible, sandbox, connection, update, carousel, theme, onThemeChange}: TerminalProps) {
+export function TerminalView({id, command, port, owner, epoch, position, visible, sandbox, connection, update, carousel, theme, onThemeChange}: TerminalProps) {
+  const shared = !!port;
+  const live = connection === 'connecting' || connection === 'online';
+  const readOnly = shared && !owner && live;
+  const consumedEnter = useRef(false);
+  const takeButton = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -97,13 +105,15 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
   const {copy, paste, copyView, setCopyView, nativePaste, setNativePaste} = useTerminalClipboard(session, report);
 
   useLayoutEffect(() => {
-    const current = openTerminal(host.current!, savedFontSize(), command, sandbox, {
+    const source = port && epoch !== undefined ? {id, port, epoch, owner:!!owner} : command;
+    if (!source) return;
+    const current = openTerminal(host.current!, savedFontSize(), source, sandbox, {
       started(program) {
         const name = program?.split('/').pop();
         update(id, {state: 'online', detail: 'working', ...(name && {program: name})});
         if (current.visible() && !matchMedia('(pointer: coarse)').matches) current.term.focus();
       },
-      title(value) { update(id, {title: value.trim().slice(0, 256)}); },
+      title(value) { if (!shared) update(id, {title: value.trim().slice(0, 256)}); },
       closed(result) {
         if ('error' in result) update(id, {state: 'failed', detail: result.error});
         else if ('exitCode' in result) update(id, {state: result.exitCode === 0 ? 'closed' : 'nonzero', detail: 'exit code ' + result.exitCode});
@@ -118,12 +128,15 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
       session.current = null;
       current.dispose();
     };
-  }, [id, command, sandbox, update, copy, paste, setNativePaste]);
+  }, [id, command, port, epoch, owner, shared, sandbox, update, copy, paste, setNativePaste]);
 
   useLayoutEffect(() => {
     if (session.current) session.current.term.options.theme = themes[theme];
-  }, [theme, id, command, sandbox, update, copy, paste, setNativePaste]);
+  }, [theme, id, command, port, epoch, owner, sandbox, update, copy, paste, setNativePaste]);
 
+  useLayoutEffect(() => {
+    session.current?.updateRunning?.(live);
+  }, [live, port, epoch, owner]);
   useLayoutEffect(() => {
     if (!choosingTheme) return;
     if (!visible || copyView || nativePaste || !toolsVisible || menu !== 'tools') {
@@ -151,6 +164,12 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
     const button = (name: string) => keys.querySelector<HTMLButtonElement>(`[data-control="${name}"]`)!;
     const bindings = new AbortController();
     const {signal} = bindings;
+    if (readOnly) {
+      setChoosingTheme(false);
+      scope.focus({preventScroll:true});
+      current.resize();
+      return () => bindings.abort();
+    }
     function key(value: string, shift = false) {
       if (!current!.online()) return;
       current!.key(value, true, shift);
@@ -176,7 +195,7 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
     bindDirectionPad(button('nav-pad'), 'nav', signal, key, report);
     current.resize();
     if (!matchMedia('(pointer: coarse)').matches) {
-      if (current.online()) current.term.focus();
+      if (current.online() || (owner && live)) current.term.focus();
       else scope.focus({preventScroll: true});
     }
     return () => {
@@ -185,7 +204,7 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
       setNativePaste(false);
       if (scope.contains(document.activeElement) && document.activeElement instanceof HTMLElement) document.activeElement.blur();
     };
-  }, [visible, sandbox, copy, paste, report, setCopyView, setNativePaste, carousel]);
+  }, [visible, sandbox, copy, paste, report, setCopyView, setNativePaste, carousel, readOnly, epoch, owner]);
 
   function font(size: number) {
     const current = session.current;
@@ -216,15 +235,29 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
   const control = (name: string) => ({id: visible ? name : undefined, 'data-control': name});
   return <div className="terminal-frame" data-outside={position < 0 || undefined} style={{order:position}} inert={!visible} hidden={!visible} id={'terminal-panel-' + id}
     role="tabpanel" aria-labelledby={'terminal-tab-' + id}>
-    <div ref={root} className="terminal-view" style={themeStyle(theme)} tabIndex={-1} aria-label="Terminal">
+    <div ref={root} className="terminal-view" data-readonly={readOnly || undefined}
+      onKeyDownCapture={event => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        if (!event.repeat) consumedEnter.current = false;
+        if (!readOnly && !consumedEnter.current) return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) { consumedEnter.current = true; takeButton.current?.click(); }
+      }} onKeyUpCapture={event => {
+        if (event.key === 'Enter' && consumedEnter.current) {
+          consumedEnter.current = false;
+          event.preventDefault();event.stopPropagation();
+        }
+      }} style={themeStyle(theme)} tabIndex={-1} aria-label="Terminal">
       <span ref={screenNotice} className="terminal-screen-notice" role="status"/>
-      <div inert={!!copyView} ref={screen} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
-        <div ref={host} className="terminal-host"/>
+      <div inert={!!copyView} ref={screen} onPointerDown={() => { if (readOnly) root.current?.focus({preventScroll:true}); }} {...control('screen')} className="terminal-screen" aria-label="Container terminal">
+        <div ref={host} className="terminal-host" inert={readOnly}/>
       </div>
       <div inert={!!copyView} ref={handles} className="terminal-handles">
         <button hidden aria-label="Selection start"/><button hidden aria-label="Selection end"/>
       </div>
-      <div inert={!!copyView} ref={toolbar} className="terminal-toolbar" data-menu={nativePaste ? 'paste' : menu} hidden={!toolsVisible && !nativePaste} role="group" aria-label="Terminal toolbar"
+      <div inert={!!copyView} ref={toolbar} className="terminal-toolbar" data-menu={nativePaste ? 'paste' : menu} hidden={readOnly || (!toolsVisible && !nativePaste)} role="group" aria-label="Terminal toolbar"
         onClickCapture={event => {
           if (choosingTheme && event.target instanceof Element && !event.target.closest('[data-control="theme"], .terminal-theme-picker')) setChoosingTheme(false);
         }}
@@ -272,7 +305,9 @@ export function TerminalView({id, command, position, visible, sandbox, connectio
           dismissPaste();
         }}/>}
       </div>
-      {visible && copyView && <CopyMode view={copyView} onClose={() => {
+      {readOnly && <div className="terminal-take-control"><button type="button" ref={takeButton}
+        onClick={() => session.current?.take?.()}>Take control (↵)</button></div>}
+      {visible && !readOnly && copyView && <CopyMode view={copyView} onClose={() => {
         flushSync(() => setCopyView(null));
         if (session.current?.visible()) {
           if (!matchMedia("(pointer: coarse)").matches && session.current.online()) session.current.term.focus();

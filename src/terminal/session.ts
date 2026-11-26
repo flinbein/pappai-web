@@ -1,3 +1,6 @@
+import {bindSharedScreen, type SharedScreen} from './shared-screen';
+import {activeTerminalPort} from '../panel/shared-client';
+import {openInstallerSocket} from '../panel/installer-socket';
 import type {TerminalStart} from './launch-input';
 import {FitAddon} from '@xterm/addon-fit';
 import {Terminal} from '@xterm/xterm';
@@ -16,40 +19,50 @@ type SessionEvents = {
 
 export const defaultFontSize = 16;
 
-export function openTerminal(screen: HTMLElement, fontSize: number, command: string | TerminalStart, sandbox: boolean, events: SessionEvents) {
+export function openTerminal(screen: HTMLElement, fontSize: number, command: string | TerminalStart | SharedScreen, sandbox: boolean, events: SessionEvents) {
   const term = new Terminal({
-    cursorBlink: true, fontSize, fontFamily: 'monospace', scrollback: 3000,
+    allowProposedApi: true, cursorBlink: true, fontSize, fontFamily: 'monospace', scrollback: 3000,
     theme: {background: '#12191b', foreground: '#e5eeec', selectionBackground: '#387466'},
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(screen);
-  const url = new URL('/api/ws/terminal', location.href);
-  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.searchParams.set('start', 'manual');
-  if (sandbox) url.searchParams.set('sandbox', '1');
-  const socket = new WebSocket(url);
-  socket.binaryType = 'arraybuffer';
+  const shared = typeof command === 'object' && 'port' in command ? bindSharedScreen(screen,term,fit,command) : undefined;
+  function openSocket() {
+    const port = activeTerminalPort();
+    if (typeof command === 'string' && port) return openInstallerSocket(port);
+    const url = new URL('/api/ws/terminal', location.href);
+    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('start','manual');
+    if (sandbox) url.searchParams.set('sandbox','1');
+    const socket = new WebSocket(url);
+    socket.binaryType = 'arraybuffer';
+    return socket;
+  }
+  const socket = shared ? undefined : openSocket();
   const encoder = new TextEncoder();
   let modifiers = noModifiers;
   let lastSize = '';
   let started = false;
   let finished = false;
 
-  const online = () => started && !finished && socket.readyState === WebSocket.OPEN;
+  const online = () => shared ? shared.online() : started && !finished && socket?.readyState === WebSocket.OPEN;
   const visible = () => screen.clientWidth > 0 && screen.clientHeight > 0 && !screen.closest('.terminal-frame[hidden]');
   function resize() {
+    if (shared) return shared.resize();
     if (!visible()) return;
     const size = fit.proposeDimensions();
     if (!size || !Number.isFinite(size.cols) || !Number.isFinite(size.rows)) return;
     term.resize(Math.min(1000, size.cols), Math.min(1000, size.rows));
     const message = JSON.stringify({cols: term.cols, rows: term.rows});
-    if (online() && message !== lastSize) {
+    if (socket && online() && message !== lastSize) {
       socket.send(message);
       lastSize = message;
     }
   }
   function send(data: Uint8Array<ArrayBuffer>) {
+    if (shared) return shared.send(data);
+    if (!socket) return;
     for (let i = 0; online() && i < data.length; i += 16384) socket.send(data.subarray(i, i + 16384));
   }
   function setModifiers(next: Modifiers) {
@@ -100,7 +113,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
   const observer = new ResizeObserver(resize);
   observer.observe(screen);
   resize();
-  socket.onopen = () => {
+  if (socket) socket.onopen = () => {
     const dimensions = {cols: term.cols, rows: term.rows};
     lastSize = JSON.stringify(dimensions);
     const start = typeof command === 'string' ? {command} : command;
@@ -115,7 +128,7 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
     clearModifiers();
     events.closed(result);
   }
-  socket.onmessage = ({data}: MessageEvent<unknown>) => {
+  if (socket) socket.onmessage = ({data}: MessageEvent<unknown>) => {
     if (data instanceof ArrayBuffer) {
       const bytes = new Uint8Array(data);
       events.output?.(bytes);
@@ -135,18 +148,20 @@ export function openTerminal(screen: HTMLElement, fontSize: number, command: str
       }
     }
   };
-  socket.onclose = () => finish({disconnected: true});
+  if (socket) socket.onclose = () => finish({disconnected: true});
   function close() {
-    socket.close();
+    socket?.close();
   }
-  window.addEventListener('pagehide', close);
+  if (socket) window.addEventListener('pagehide', close);
   return {
     term, resize, key, paste, online, visible,
+    take: shared?.take, updateRunning: shared?.updateRunning,
     modifier(name: keyof Modifiers) { setModifiers({...modifiers, [name]: !modifiers[name]}); },
     dispose() {
       window.removeEventListener('pagehide', close);
       screen.removeEventListener('paste', clearModifiers, true);
-      socket.onopen = socket.onclose = socket.onmessage = socket.onerror = null;
+      shared?.dispose();
+      if (socket) socket.onopen = socket.onclose = socket.onmessage = null;
       close();
       observer.disconnect();
       term.dispose();

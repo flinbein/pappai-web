@@ -305,3 +305,15 @@ html:has(.terminal-deck) { overscroll-behavior-x: none; }
 .cli-group-toggle[data-state=online] .cli-group-star { color:#48bc78; }
 .cli-group-toggle[data-state=connecting] .cli-group-star { color:#e2ba48; }
 .cli-group-toggle:is([data-state=failed],[data-state=nonzero]) .cli-group-star { color:#ea706c; }
+
+.terminal-view[data-readonly=true] .terminal-screen { position:relative; overflow:clip; padding-bottom:0; }
+.terminal-view[data-readonly=true] .terminal-host .xterm { width:max-content; height:max-content; transform-origin:top left; }
+.terminal-view[data-readonly=true] .terminal-screen::after {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(135deg,transparent 0 8px,color-mix(in srgb,var(--term-fg) 7%,transparent) 8px 9px);
+}
+.terminal-take-control {
+  display:flex; justify-content:center; flex:none; background:var(--term-panel);
+  padding:3px 4px max(3px,var(--terminal-safe,env(safe-area-inset-bottom))); border-top:1px solid var(--term-edge);
+}
+.terminal-take-control button { min-height:2rem; }

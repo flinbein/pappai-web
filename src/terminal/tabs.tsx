@@ -7,15 +7,20 @@ import {TabCarousel} from './carousel';
 import {keyboardInset} from './viewport';
 import {rememberTheme, savedTheme, themeStyle, type ThemeName} from './themes';
 import {LaunchForm} from './launch-form';
+import {activeTerminalPort} from '../panel/shared-client';
+import type {TerminalEntry, TerminalEvent, TerminalRequest, TerminalState} from './protocol';
 import type {DirectoryNode} from '../panel/api';
 import type {CliAction, TerminalStart} from './launch-input';
 
-export type TerminalState = 'connecting' | 'online' | 'closed' | 'nonzero' | 'failed';
+export type {TerminalState} from './protocol';
 type TerminalTab = {
   closing?: boolean;
   theme: ThemeName;
   id: number;
-  command: TerminalStart;
+  command?: TerminalStart;
+  cli?: {node: string; method: string};
+  epoch?: number;
+  owner?: boolean;
   group?: string;
   nodeName?: string;
   sandbox: boolean;
@@ -82,9 +87,13 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   function chooseTheme(theme: ThemeName, id?: number) {
     setLaunchTheme(theme);
     rememberTheme(theme);
-    if (id !== undefined) setTabs(items => items.map(tab => tab.id === id ? {...tab, theme} : tab));
+    if (port && id !== undefined) post({type:'terminal.theme',id,theme});
+    else if (id !== undefined) setTabs(items => items.map(tab => tab.id === id ? {...tab, theme} : tab));
   }
   const nextId = useRef(1);
+  const port = activeTerminalPort();
+  const launches = useRef(new Map<string,string | undefined>());
+  function post(message: TerminalRequest) { port?.postMessage(message); }
   const workspace = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const carousel = useRef<TabCarousel | null>(null);
@@ -123,7 +132,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   }, []);
   useLayoutEffect(() => { carousel.current?.sync(visible ? [...slides, null] : [], selected); });
   const online = tabs.some(tab => !tab.closing && tab.state === 'online');
-  useLayoutEffect(() => { onOnlineChange(online); }, [online, onOnlineChange]);
+  useLayoutEffect(() => { if (!port) onOnlineChange(online); }, [port, online, onOnlineChange]);
   useLayoutEffect(() => {
     if (visible) strip.current?.querySelector('.terminal-tab-group[data-selected=true], #new-terminal[aria-selected=true]')?.scrollIntoView({block:'nearest', inline:'nearest'});
   }, [visible, selected, scope, expanded]);
@@ -133,18 +142,29 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   }, []);
 
   function launch(command: TerminalStart, sandbox: boolean) {
-    const id = nextId.current++;
+
     const group = 'cli' in command ? groupId(command.cli) : undefined;
     const program = 'cli' in command ? command.cli.method : command.argv[0].split('/').pop() || command.argv[0];
     const nodeName = 'cli' in command ? nodes.find(node => node.id === command.cli.node)?.name : undefined;
-    setTabs(previous => [...previous, {id, command, group, nodeName, sandbox, program, title:'', state:'connecting', detail:'starting', theme:launchTheme}]);
+    if (port) {
+      const requestId = crypto.randomUUID();
+      launches.current.set(requestId,group);
+      post({type:'terminal.launch',requestId,command,sandbox,theme:launchTheme,nodeName});
+      return;
+    }
+    const id = nextId.current++;
+    setTabs(previous => [...previous, {id, command, cli:'cli' in command ? command.cli : undefined, group, nodeName, sandbox, program, title:'', state:'connecting', detail:'starting', theme:launchTheme}]);
     select(id, group);
     setFormVersion(value => value + 1);
   }
   function remove(items: TerminalTab[], message: string) {
     if (items.some(live) && !window.confirm(message)) return;
     const ids = new Set(items.map(item => item.id));
-    const remaining = tabs.filter(tab => !tab.closing && !ids.has(tab.id));
+    if (port) post({type:'terminal.remove',ids:[...ids]});
+    else reconcile(ids);
+  }
+  function reconcile(ids: Set<number>, incoming?: TerminalTab[]) {
+    const remaining = incoming ?? tabs.filter(tab => !tab.closing && !ids.has(tab.id));
     // Unmount the PTYs now. Only their inert strip items stay for the exit transition.
     flushSync(() => {
       setSelections(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => {
@@ -152,12 +172,47 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
         const pool = remaining.filter(tab => key ? tab.group === key : !tab.group || tab.group === expanded);
         return [key, pool.find(tab => tab.id > value)?.id ?? pool.at(-1)?.id ?? null];
       })));
-      setTabs(previous => previous.map(tab => ids.has(tab.id) ? {...tab, closing:true} : tab));
+      setTabs(previous => {
+        const byId = new Map(incoming?.map(tab => [tab.id,tab]));
+        const existing = previous.map(tab => {
+          if (ids.has(tab.id)) return {...tab,closing:true};
+          const replacement = byId.get(tab.id);
+          byId.delete(tab.id);
+          return replacement ?? tab;
+        });
+        return existing.concat([...byId.values()]);
+      });
     });
     const exits = Array.from(strip.current!.querySelectorAll('.strip-item[data-closing=true]'))
       .flatMap(item => item.getAnimations().map(animation => animation.finished));
     void Promise.allSettled(exits).then(() => setTabs(previous => previous.filter(tab => !ids.has(tab.id))));
   }
+  const registryHandler = useRef<(event: TerminalEvent) => void>(() => {});
+  useLayoutEffect(() => {
+    registryHandler.current = event => {
+      if (event.type === 'terminal.created') {
+        if (!launches.current.has(event.requestId)) return;
+        select(event.id,launches.current.get(event.requestId));
+        launches.current.delete(event.requestId);
+        setFormVersion(value => value + 1);
+      } else if (event.type === 'terminal.registry') {
+        const incoming = event.entries.map((entry: TerminalEntry) => ({
+          ...entry,group:entry.cli ? groupId(entry.cli) : undefined,
+        }));
+        const ids = new Set(incoming.map(item => item.id));
+        const removed = new Set(tabs.filter(tab => !tab.closing && !ids.has(tab.id)).map(tab => tab.id));
+        if (removed.size) reconcile(removed,incoming);
+        else setTabs(previous => [...incoming,...previous.filter(tab => tab.closing)].sort((a,b)=>a.id-b.id));
+      }
+    };
+  });
+  useLayoutEffect(() => {
+    if (!port) return;
+    const receive = ({data}: MessageEvent<TerminalEvent>) => registryHandler.current(data);
+    port.addEventListener('message',receive);
+    port.postMessage({type:'terminal.list'} satisfies TerminalRequest);
+    return () => port.removeEventListener('message',receive);
+  }, [port]);
   function moveTab(event: React.KeyboardEvent) {
     if (!(event.target instanceof HTMLElement) || event.target.getAttribute('role') !== 'tab') return;
     const buttons = Array.from(strip.current!.querySelectorAll<HTMLButtonElement>('[role=tab]:not([inert] *)'));
@@ -189,13 +244,13 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   return <div className="terminal-workspace" ref={workspace}>
     <div ref={strip} className="terminal-tabs" role="tablist" aria-label="Terminals" onKeyDown={moveTab}>
       {sections.map(tab => {
-        if (action || !tab.group || !('cli' in tab.command)) return tabButton(tab);
+        if (action || !tab.group || !tab.cli) return tabButton(tab);
         const group = tab.group;
         const items = groupTabs.get(group)!;
         const available = items.filter(item => !item.closing);
         const open = expanded === group;
         const groupActive = items.some(item => item.id === selected);
-        const {node, method} = tab.command.cli;
+        const {node, method} = tab.cli;
         const name = nodes.find(entry => entry.id === node)?.name ?? tab.nodeName ?? 'Unknown node';
         const label = method + ' · ' + name;
         const status = groupStatus(items);
@@ -237,7 +292,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
         if (tab.state === 'failed') return <div key={tab.id} className="terminal-frame terminal-failed-frame" data-outside={position < 0 || undefined}
           style={{...themeStyle(tab.theme),order:position}} inert={!active} hidden={!active} id={'terminal-panel-' + tab.id}
           role="tabpanel" aria-label={tab.title || tab.program}><pre className="terminal-launch-error" role="alert">{tab.detail}</pre></div>;
-        return <TerminalView key={tab.id} id={tab.id} command={tab.command} position={position} sandbox={tab.sandbox} theme={tab.theme}
+        return <TerminalView key={tab.id} id={tab.id} command={tab.command} port={port} owner={tab.owner} epoch={tab.epoch} position={position} sandbox={tab.sandbox} theme={tab.theme}
           onThemeChange={theme => chooseTheme(theme, tab.id)} connection={tab.state} visible={active} update={update} carousel={carousel}/>;
       })}
       <div id="terminal-launch" role="tabpanel" aria-labelledby="new-terminal" style={{order:slides.length}}

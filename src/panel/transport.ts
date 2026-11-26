@@ -164,10 +164,24 @@ export class PanelConnection {
     return id;
   }
 
-  rpc<T = unknown>(method: string, params: unknown): Promise<T> {
-    return new Promise((resolve, reject) => {
-      this.request(method, params, value => resolve(value as T), reject);
+  rpc<T = unknown>(method: string, params: unknown, signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) return Promise.reject(disconnected());
+    let id: number;
+    const cancel = () => {
+      const request = this.requests.get(id);
+      if (!request) return;
+      this.requests.delete(id);
+      request.reject(disconnected());
+      if (method === 'call' && request.body === undefined) {
+        void this.rpc('cancel', {id}).catch(() => {});
+      }
+    };
+    const result = new Promise<T>((resolve, reject) => {
+      id = this.request(method, params, value => resolve(value as T), reject);
     });
+    if (!signal) return result;
+    signal.addEventListener('abort', cancel, {once: true});
+    return result.finally(() => signal.removeEventListener('abort', cancel));
   }
 
   private add(id: string, listener: Registration) {

@@ -1,4 +1,5 @@
 import { PanelConnection } from './transport';
+import { SharedPanelConnection } from './shared-client';
 
 export type NodeType = 'workspace' | 'team' | 'user' | 'app' | 'profile';
 export type Status = 'working' | 'stopping' | 'stopped' | 'error';
@@ -27,6 +28,7 @@ export interface Runner {
 }
 export interface Session {
   user: string | null;
+  browserSession?: string;
   canChooseSandbox: boolean;
   canManageApps: boolean;
 }
@@ -50,30 +52,48 @@ export function parseJSON(text: string): unknown {
   }
 }
 
-let active: { user: string; connection: PanelConnection; onExpired: () => void } | undefined;
+let active: {
+  user: string;
+  browserSession?: string;
+  connection: PanelConnection | SharedPanelConnection;
+  onExpired: (reason?: string) => void;
+} | undefined;
 
 export function stopPanelConnection() {
   active?.connection.stop();
   active = undefined;
 }
 
-export function startPanelConnection(user: string, onExpired: () => void) {
-  if (active?.user === user) {
+export function startPanelConnection(user: string, onExpired: (reason?: string) => void, browserSession?: string) {
+  if (active?.user === user && active.browserSession === browserSession) {
     active.onExpired = onExpired;
     return;
   }
   stopPanelConnection();
-  const connection = new PanelConnection(
-    () => new WebSocket(new URL('/api/ws/web', location.href)),
-    async () => (await getSession()).user === user,
-    () => {
-      if (active?.connection !== connection) return;
-      const expired = active.onExpired;
-      active = undefined;
-      expired();
-    },
-  );
-  active = { user, connection, onExpired };
+  let connection: PanelConnection | SharedPanelConnection;
+  const expired = (reason?: string) => {
+    if (active?.connection !== connection) return;
+    const notify = active.onExpired;
+    active = undefined;
+    notify(reason);
+  };
+  if (browserSession && typeof SharedWorker !== 'undefined') {
+    try {
+      connection = new SharedPanelConnection(user, browserSession, expired);
+      active = { user, browserSession, connection, onExpired };
+      return;
+    } catch (error) {
+      // Browser privacy settings can disable worker construction for this origin.
+      console.warn('Shared workspace connection unavailable.', error);
+    }
+  }
+  const url = new URL('/api/ws/web', location.href);
+  if (browserSession) url.searchParams.set('browserSession', browserSession);
+  connection = new PanelConnection(() => new WebSocket(url), async () => {
+    const next = await getSession();
+    return next.user === user && next.browserSession === browserSession;
+  }, expired);
+  active = { user, browserSession, connection, onExpired };
 }
 
 export function subscribePanelEvent(...args: Parameters<PanelConnection['subscribe']>) {
@@ -132,5 +152,10 @@ export async function login() {
   await auth('login/verify', credential.toJSON());
 }
 
-export const logout = () => auth('logout');
+export async function logout() {
+  const current = active;
+  await auth('logout');
+  if (current?.connection instanceof SharedPanelConnection) current.connection.stop(true);
+  if (current === active) stopPanelConnection();
+}
 export const recover = (email: string) => auth('recover', { email });

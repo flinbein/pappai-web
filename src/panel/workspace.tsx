@@ -174,7 +174,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const consoleRoute = location.pathname === '/rpc';
   const nodeRoute = !!match || location.pathname === '/';
   const title = terminalRoute ? 'Terminal' : consoleRoute ? 'RPC console' : selectedNode?.name ?? selected;
-  return <TerminalProvider defaultSandbox={requestedSandbox} canChooseSandbox={session.canChooseSandbox}
+  return <TerminalProvider nodes={nodes} defaultSandbox={requestedSandbox} canChooseSandbox={session.canChooseSandbox}
     shellVisible={terminalRoute && (!narrow || pane === 'node')} actionVisible={nodeRoute && (!narrow || pane === 'action')}
     onOnlineChange={setLive}><RunnerInstallerProvider><div id="workspace" data-pane={pane} data-action={Boolean(action && selectedNode)}>
     <nav ref={breadcrumbs} className="breadcrumbs" aria-label="Workspace panes">

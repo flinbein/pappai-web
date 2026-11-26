@@ -6,6 +6,7 @@
     ? Promise.resolve(Response.json({user:'test', canManageApps:false, canChooseSandbox:true})) : nativeFetch(url, options);
   const workspace = {id:'~',parentId:null,type:'workspace',name:'Workspace'};
   const profile = {id:'profile-demo',parentId:'~',type:'profile',name:'Demo'};
+  const twin = {...profile,id:'profile-twin'};
   const catalog = {
     inspect:{type:'cli',version:'1',description:'Inspect this profile',schema:{input:{type:'object',properties:{args:{type:'array',items:{enum:['valid']}},env:{type:'object',additionalProperties:{type:'string'}}},additionalProperties:false}}},
     report:{type:'cli',version:'1',description:'Print report',schema:{input:{type:'object',additionalProperties:false}}}
@@ -28,7 +29,7 @@
         if (msg.argv || msg.cli) this.request = msg;
         return;
       }
-      const result = msg.method === 'discover' ? [workspace,profile] : msg.method === 'help' && msg.params.node === profile.id ? catalog : {};
+      const result = msg.method === 'discover' ? [workspace,profile,twin] : msg.method === 'help' && [profile.id,twin.id].includes(msg.params.node) ? catalog : {};
       queueMicrotask(() => this.emit({jsonrpc:'2.0', id:msg.id, result}));
     }
     emit(msg) {this.onmessage?.({data:JSON.stringify(msg)});}
@@ -92,14 +93,15 @@
     await wait(() => all('[data-cli-group]').length===2,'global groups');
     const group = selector => all('[data-cli-group]').find(node=>node.getAttribute('aria-label').includes(selector));
     assert(group('inspect').dataset.state==='online' && group('report').dataset.state==='connecting','group status priority');
-    assert(group('report').querySelector('.cli-group-star').textContent === '★','group status star');
+    assert(group('inspect').querySelector('.cli-group-star').textContent === '★','group status star');
     group('inspect').click();
     await click('[data-terminal="1"]');
-    assert(group('inspect').textContent.includes('(R)') && !group('inspect').textContent.includes('inspect'), 'compact expanded group');
+    assert(group('inspect').textContent === 'inspect · Demo','expanded group label');
+    assert(group('inspect').closest('.cli-group').querySelectorAll('[data-terminal]').length===2,'outlined group contains both tabs');
     await wait(() => active()===first,'same xterm across routes');
     group('inspect').click();
-    await wait(() => all('[data-terminal]').length===0 && active()===first,'collapse retaining screen');
-    await click('#new-terminal');
+    await wait(() => all('[data-terminal]').length===0 && el('#new-terminal[aria-selected=true]'),'collapse selects launcher');
+    assert(all('.terminal-frame:not([data-outside])').length===0 && !active(),'carousel excludes both collapsed groups');
     await wait(() => el('#terminal-command')?.value==='/bin/sh -i','global shell form');
     assert(el('#start-terminal').textContent === 'Start','shell submit label');
     await launch(4);
@@ -116,6 +118,21 @@
     await click('[data-close-group]');
     await wait(() => !group('inspect') && sockets[0].readyState===3,'group removed');
     assert(sockets.length===4 && all('#new-terminal').length===1 && sockets[2].readyState===1 && sockets[3].readyState===1,'unrelated sockets survived');
+    await click('[data-node="profile-twin"]');
+    await click('[data-cli-method=report]');
+    await wait(() => el('.cli-launch-context')?.textContent.includes(twin.id),'second node');
+    await launch(5);
+    await click('#nav-terminal');
+    await wait(() => all('[data-cli-group]').length===2,'same-name groups');
+    const headers=all('[data-cli-group]');
+    assert(headers.every(header=>header.getAttribute('aria-label')==='report · Demo'), 'method followed by node name');
+    assert(new Set(headers.map(header=>header.dataset.cliGroup)).size===2,'distinct group identities');
+    assert(selection(5) && !el('[data-terminal="3"]'),'only the selected group is expanded');
+    await click('[data-terminal="4"]');
+    headers.find(header=>header.getAttribute('aria-expanded')==='true').click();
+    await wait(() => selection(4) && all('.terminal-frame:not([data-outside])').length===1,'collapsing another group preserves selection');
+    await click('[data-close-terminal="4"]');
+    await wait(() => el('#new-terminal[aria-selected=true]'),'closing shell skips collapsed groups');
     document.querySelector('output').textContent='pass';
   } catch(error) {document.querySelector('output').textContent=error.stack;}
   finally {await nativeFetch('/test-finished');}

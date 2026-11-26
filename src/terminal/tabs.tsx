@@ -1,4 +1,4 @@
-import {Fragment, useCallback, useLayoutEffect, useRef, useState} from 'react';
+import {type CSSProperties, useCallback, useLayoutEffect, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
 import {TerminalView} from './view';
 import {bindTabSwipe} from './trackpad';
@@ -7,6 +7,7 @@ import {TabCarousel} from './carousel';
 import {keyboardInset} from './viewport';
 import {rememberTheme, savedTheme, themeStyle, type ThemeName} from './themes';
 import {LaunchForm} from './launch-form';
+import type {DirectoryNode} from '../panel/api';
 import type {CliAction, TerminalStart} from './launch-input';
 
 export type TerminalState = 'connecting' | 'online' | 'closed' | 'nonzero' | 'failed';
@@ -15,6 +16,7 @@ type TerminalTab = {
   id: number;
   command: TerminalStart;
   group?: string;
+  nodeName?: string;
   sandbox: boolean;
   program: string;
   title: string;
@@ -24,6 +26,11 @@ type TerminalTab = {
 export type TerminalUpdate = Partial<Pick<TerminalTab, 'program' | 'title' | 'state' | 'detail'>>;
 const shell = '';
 function groupId(action: CliAction) { return JSON.stringify([action.node, action.method]); }
+function groupStyle(id: string): CSSProperties {
+  let hash = 0;
+  for (const char of id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
+  return {'--group-color': `hsl(${hash % 360} 68% 74%)`} as CSSProperties;
+}
 function live(tab: TerminalTab) { return tab.state === 'online' || tab.state === 'connecting'; }
 
 function groupStatus(tabs: TerminalTab[]): TerminalState {
@@ -34,6 +41,7 @@ function groupStatus(tabs: TerminalTab[]): TerminalState {
 }
 
 interface Props {
+  nodes: DirectoryNode[];
   action?: CliAction;
   visible: boolean;
   canChooseSandbox: boolean;
@@ -41,7 +49,7 @@ interface Props {
   onOnlineChange(online: boolean): void;
 }
 
-export default function TerminalTabs({action, visible, canChooseSandbox, defaultSandbox, onOnlineChange}: Props) {
+export default function TerminalTabs({nodes, action, visible, canChooseSandbox, defaultSandbox, onOnlineChange}: Props) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [selections, setSelections] = useState<Record<string, number | null>>({});
   const [expanded, setExpanded] = useState<string>();
@@ -67,8 +75,7 @@ export default function TerminalTabs({action, visible, canChooseSandbox, default
   const slides = sections.flatMap(tab => {
     if (action || !tab.group) return [tab.id];
     if (expanded === tab.group) return groupTabs.get(tab.group)!.map(item => item.id);
-    // The active screen remains visible when its group is collapsed.
-    return groupTabs.get(tab.group)!.some(item => item.id === selected) ? [selected!] : [];
+    return [];
   });
 
   function chooseTheme(theme: ThemeName, id?: number) {
@@ -128,7 +135,8 @@ export default function TerminalTabs({action, visible, canChooseSandbox, default
     const id = nextId.current++;
     const group = 'cli' in command ? groupId(command.cli) : undefined;
     const program = 'cli' in command ? command.cli.method : command.argv[0].split('/').pop() || command.argv[0];
-    setTabs(previous => [...previous, {id, command, group, sandbox, program, title:'', state:'connecting', detail:'starting', theme:launchTheme}]);
+    const nodeName = 'cli' in command ? nodes.find(node => node.id === command.cli.node)?.name : undefined;
+    setTabs(previous => [...previous, {id, command, group, nodeName, sandbox, program, title:'', state:'connecting', detail:'starting', theme:launchTheme}]);
     select(id, group);
     setFormVersion(value => value + 1);
   }
@@ -138,7 +146,7 @@ export default function TerminalTabs({action, visible, canChooseSandbox, default
     const remaining = tabs.filter(item => !ids.has(item.id));
     setSelections(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => {
       if (value === null || !ids.has(value)) return [key,value];
-      const pool = remaining.filter(tab => !key || tab.group === key);
+      const pool = remaining.filter(tab => key ? tab.group === key : !tab.group || tab.group === expanded);
       return [key, pool.find(tab => tab.id > value)?.id ?? pool.at(-1)?.id ?? null];
     })));
     setTabs(remaining);
@@ -178,18 +186,23 @@ export default function TerminalTabs({action, visible, canChooseSandbox, default
         const open = expanded === group;
         const groupActive = items.some(item => item.id === selected);
         const {node, method} = tab.command.cli;
-        const label = node + ' · ' + method;
+        const name = nodes.find(entry => entry.id === node)?.name ?? tab.nodeName ?? 'Unknown node';
+        const label = method + ' · ' + name;
         const status = groupStatus(items);
-        return <Fragment key={group}><div className="terminal-tab-group cli-group" style={themeStyle(tab.theme)} data-selected={!open && groupActive}>
+        return <div key={group} className="cli-group" style={groupStyle(group)} data-expanded={open}>
+          <div className="cli-group-label">
           <button type="button" role="tab" className="cli-group-toggle" data-state={status} data-cli-group={group} aria-label={label} title={label}
-            aria-selected={!open && groupActive} aria-expanded={open} onClick={() => {
-              if (open) setExpanded(undefined);
+            aria-selected={false} aria-expanded={open} onClick={() => {
+              if (open) {
+                setExpanded(undefined);
+                if (groupActive) select(null);
+              }
               else select(items.find(item => item.id === selections[group])?.id ?? items[0].id, group);
-            }}><span className="cli-group-star" role="img" title={status} aria-label={status}>★</span>
-            <span className="terminal-tab-title">{open ? '(R)' : label}</span></button>
+            }}>{!open && <span className="cli-group-star" role="img" title={status} aria-label={status}>★</span>}
+            <span>{label}</span></button>
           {!open && <button type="button" className="terminal-tab-close" data-close-group={group} aria-label={'Close group ' + label}
             onClick={() => remove(items, 'Close all terminals in ' + label + ' and end their running processes?')}>×</button>}
-        </div>{open && items.map(tabButton)}</Fragment>;
+        </div>{open && items.map(tabButton)}</div>;
       })}
       <button id="new-terminal" type="button" role="tab" aria-controls="terminal-launch" aria-selected={selected === null}
         aria-label="New terminal" title="New terminal" onClick={() => select(null)}><span>+</span></button>

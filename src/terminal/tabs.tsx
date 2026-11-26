@@ -47,6 +47,23 @@ function groupStatus(tabs: TerminalTab[]): TerminalState {
   return 'closed';
 }
 
+function TerminalStatusIcon({state, label}: {state: TerminalState; label: string}) {
+  const icon = useRef<HTMLSpanElement>(null);
+  const previous = useRef(state);
+  useLayoutEffect(() => {
+    if (previous.current === state) return;
+    previous.current = state;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const pulse = icon.current!.animate([
+      {transform:'scale(1)', boxShadow:'0 0 0 0 transparent'},
+      {transform:'scale(1.4)', boxShadow:'0 0 0 2px currentColor', offset:0.25},
+      {transform:'scale(1)', boxShadow:'0 0 0 6px transparent'},
+    ], {duration:650, iterations:state === 'online' ? 1 : 2, easing:'ease-out'});
+    return () => pulse.cancel();
+  }, [state]);
+  return <span ref={icon} className="terminal-tab-dot" role="img" title={label} aria-label={label}/>;
+}
+
 interface Props {
   nodes: DirectoryNode[];
   action?: CliAction;
@@ -271,7 +288,7 @@ export default function TerminalTabs({nodes, action, entryKey, visible, canChoos
       <div className="terminal-tab-group" style={themeStyle(tab.theme)} data-selected={selected === tab.id}>
         <button type="button" role="tab" id={'terminal-tab-' + tab.id} className="terminal-tab" data-terminal={tab.id} data-state={tab.state}
           aria-selected={selected === tab.id} aria-controls={'terminal-panel-' + tab.id} title={title} onClick={() => chooseTab(tab.id, tab.group)}>
-          <span className="terminal-tab-dot" role="img" title={status} aria-label={status}/><span className="terminal-tab-title">{title}</span>
+          <TerminalStatusIcon state={tab.state} label={status}/><span className="terminal-tab-title">{title}</span>
         </button>
         <button type="button" className="terminal-tab-close" data-close-terminal={tab.id} aria-label={'Close terminal ' + tab.id}
           onClick={() => remove([tab], 'Close this terminal and end its running process?')}><span>×</span></button>

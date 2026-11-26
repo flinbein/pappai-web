@@ -47,14 +47,15 @@
   unicode-bidi: isolate;
 }
 .terminal-tab-dot { position: relative; box-sizing: border-box; width: .6rem; height: .6rem; flex: none; }
-.terminal-tab[data-state=connecting] .terminal-tab-dot { border: 2px solid #e2ba48; border-radius: 50%; }
-.terminal-tab[data-state=online] .terminal-tab-dot { background: #48bc78; border-radius: 50%; }
-.terminal-tab[data-state=closed] .terminal-tab-dot { background: #939c9c; }
-.terminal-tab[data-state=nonzero] .terminal-tab-dot { background: #ea706c; }
+.terminal-tab[data-state=connecting] .terminal-tab-dot { color: #e2ba48; border: 2px solid; border-radius: 50%; }
+.terminal-tab[data-state=online] .terminal-tab-dot { color: #48bc78; background: currentColor; border-radius: 50%; }
+.terminal-tab[data-state=closed] .terminal-tab-dot { color: #939c9c; background: currentColor; }
+.terminal-tab:is([data-state=failed],[data-state=nonzero]) .terminal-tab-dot { color: #ea706c; }
+.terminal-tab[data-state=nonzero] .terminal-tab-dot { background: currentColor; }
 .terminal-tab[data-state=failed] .terminal-tab-dot::before,
 .terminal-tab[data-state=failed] .terminal-tab-dot::after {
   content: ''; position: absolute; top: calc(50% - 1px); left: 0; width: 100%; height: 2px;
-  background: #ea706c; transform: rotate(45deg);
+  background: currentColor; transform: rotate(45deg);
 }
 .terminal-tab[data-state=failed] .terminal-tab-dot::after { transform: rotate(-45deg); }
 .terminal-tabs .terminal-tab-close {

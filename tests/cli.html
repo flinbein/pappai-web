@@ -101,7 +101,17 @@
     await click('#new-terminal');
     await launch(2);
     assert(JSON.stringify(sockets[1].request.cli.input)==='{}','empty optional fields');
+    const statusIcon = selection(2).querySelector('.terminal-tab-dot');
+    assert(statusIcon.getAnimations().length === 0, 'newly displayed status is static');
     sockets[1].emit({exitCode:5});
+    await wait(() => selection(2)?.dataset.state === 'nonzero', 'nonzero exit');
+    assert(statusIcon.getAnimations().length === (motion ? 1 : 0), 'status pulse respects motion preference');
+    if (motion) {
+      const [pulse] = statusIcon.getAnimations();
+      assert(pulse.effect.getTiming().iterations === 2, 'exit pulse is noticeable and finite');
+      pulse.finish();
+      assert(statusIcon.getAnimations().length === 0, 'exit icon settles');
+    }
     await click('[data-cli-method=report]');
     await wait(() => el('.cli-launch-context')?.textContent.includes('report'),'second action form');
     assert(!el('#terminal-command') && !el('.launch-environment') && !el('[data-terminal]'),'forbidden fields / scoped tabs');

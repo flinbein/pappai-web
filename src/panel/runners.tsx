@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import '@xterm/xterm/css/xterm.css';
 import { openTerminal } from '../terminal/session';
 import { call, errorMessage } from './api';
@@ -39,7 +40,7 @@ function InstallerTerminal({job, ready, failed}: {job: Job; ready: (entrypoint: 
   return <div className="managed-terminal" role="region" aria-label="Installer terminal" ref={host} />;
 }
 
-export default function RunnerInstaller({node, catalog}: InstallerProps) {
+export default function RunnerInstaller({node, catalog, changed}: InstallerProps & {changed: () => void}) {
   const mounted = useMounted();
   const [runners, setRunners] = useState<Runner[]>([]);
   const [listError, setListError] = useState('');
@@ -56,6 +57,7 @@ export default function RunnerInstaller({node, catalog}: InstallerProps) {
   const existing = runners.find(runner => runner.name === selected);
   const method = selected ? '$.runners.restart' : '$.runners.add';
   const get = catalog['$.runners.get'];
+  const getVersion = job && 'runners.' + job.name + '.getVersion';
   const canUpdate = get?.type === 'method' && catalog['$.runners.restart']?.type === 'method';
   useEffect(() => {
     if (get?.type !== 'method') return;
@@ -85,13 +87,14 @@ export default function RunnerInstaller({node, catalog}: InstallerProps) {
       await call(node, task.method, {name: task.name, entrypoint}, task.version);
       if (!mounted.current) return;
       setPhase('done');
+      changed();
       setRevision(value => value + 1);
     } catch (error) {
       if (!mounted.current) return;
       setPhase('call-failed');
       setMessage(errorMessage(error));
     }
-  }, [mounted, node]);
+  }, [changed, mounted, node]);
   const ready = useCallback((entrypoint: string) => {
     if (job) void register(job, entrypoint);
   }, [job, register]);
@@ -134,11 +137,14 @@ export default function RunnerInstaller({node, catalog}: InstallerProps) {
         {runners.filter(r => r.name !== 'process').map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
       </select></label>}
       {existing?.entrypoint && <p>Current entrypoint <code>{existing.entrypoint}</code></p>}
-      <label>Source<select id="runner-source-type" value={type} onChange={e => {
-        setType(e.target.value as SourceType); setSource(''); setEditedName(undefined); setRef(''); setMessage('');
-      }}>
-        <option value="npm">npm package</option><option value="git">Git repository</option><option value="custom">Custom path</option>
-      </select></label>
+      <fieldset className="runner-sources"><legend>Source</legend>
+        {(['npm', 'git', 'custom'] as const).map(choice => <button type="button" key={choice}
+          id={'runner-source-' + choice} aria-pressed={type === choice} className={type === choice ? '' : 'secondary'}
+          onClick={() => {
+            if (type === choice) return;
+            setType(choice); setSource(''); setEditedName(undefined); setRef(''); setMessage('');
+          }}>{choice === 'custom' ? 'Custom path' : choice === 'git' ? 'Git' : 'npm'}</button>)}
+      </fieldset>
       <label>{type === 'npm' ? 'Package specification' : type === 'git' ? 'HTTPS repository URL' : 'Entrypoint'}
         <input id={type === 'custom' ? 'entrypoint' : 'runner-source'} required value={source}
           placeholder={type === 'npm' ? '@scope/pappai-runner-example@latest' : type === 'git' ? 'https://example.org/pappai-runner-example.git' : '/run/pappai/private/runners/example/index.mjs'}
@@ -159,6 +165,8 @@ export default function RunnerInstaller({node, catalog}: InstallerProps) {
     {job && <>
       <p id="runner-status" role="status">{status}</p>
       {path && <p>Entrypoint <code>{path}</code></p>}
+      {phase === 'done' && getVersion && catalog[getVersion]?.type === 'method' &&
+        <p><Link to={'/nodes/' + encodeURIComponent(node) + '/methods/' + encodeURIComponent(getVersion)}>Check CLI status</Link></p>}
       <div className="app-actions">
         {phase === 'call-failed' && <button onClick={() => void register(job, path)}>Retry {job.method === '$.runners.add' ? 'registration' : 'restart'}</button>}
         {['done', 'call-failed', 'prepare-failed'].includes(phase) && <button className="secondary" onClick={() => {

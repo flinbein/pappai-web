@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { call, errorMessage, formatJSON, getCatalog, getRunners, statusLabel } from './api';
 import type { Catalog, DirectoryNode } from './api';
 import { Form, Submit } from './controls';
@@ -7,7 +7,7 @@ import { canCreate, choices, CreateNode } from './create-node';
 import { FeatureLinks, Method } from './features';
 import { NodeActionLink } from './node-action-link';
 import { Profile } from './profile';
-import { RunnerInstallerSlot } from './runner-installer-slot';
+import { RunnerCatalogRevision, RunnerInstallerSlot } from './runner-installer-slot';
 import type { Refresh, Reply } from './workspace';
 
 interface ChatProps {
@@ -62,6 +62,8 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
   const [availableRunner, setAvailableRunner] = useState(false);
   const [error, setError] = useState('');
   const { id, type } = node;
+  const runnerRevision = useContext(RunnerCatalogRevision);
+  const workspaceRevision = type === 'workspace' ? runnerRevision : 0;
 
   useEffect(() => { setStatus(node.status); }, [node.status]);
   useEffect(() => {
@@ -78,7 +80,7 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
     }
     void load().catch(reason => { if (current) setError(errorMessage(reason)); });
     return () => { current = false; };
-  }, [id, type, admin]);
+  }, [id, type, admin, workspaceRevision]);
 
   const hasChildren = type === 'workspace' || type === 'team';
   const createChoices = hasChildren && catalog ? choices.filter(([kind]) => canCreate(kind, catalog, admin)) : [];

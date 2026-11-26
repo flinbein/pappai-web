@@ -12,7 +12,7 @@ Select the workspace node, expand **System methods**, and open `$.runners.add`. 
 
 The embedded terminal streams preparation output. You can navigate within the workspace and reopen the method to see progress. A successful preparation registers the reported entrypoint. If registration fails, **Retry registration** reuses that entrypoint. Reloading the browser or signing out closes the terminal.
 
-To update, select an existing installation in the same form. Its saved package or repository appears when available. **Update runner** prepares the release and restarts the runner using its new entrypoint. **Roll back** restarts it with the previous entrypoint when one is available. The workspace help lists the runner methods your account can call.
+To update, select an existing installation in the same form. Its saved package or repository appears when available. **Update runner** prepares the release and restarts the runner using its new entrypoint. **Roll back** restarts it with the previous entrypoint when one is available. After registration or restart, the panel refreshes workspace help. For a runner that advertises `getVersion`, **Check CLI status** opens that method’s call form.
 
 ## Development
 

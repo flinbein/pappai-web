@@ -42,7 +42,10 @@
           const {method,data} = msg.params;
           calls.push({method,data});
           if (rejectFirst) { rejectFirst = false; reply.error = {message:'Test registration failure'}; }
-          else if (method === '$.runners.add') entries.push({...data, source:{type:'npm', spec:'pappai-runner-demo@latest'}});
+          else if (method === '$.runners.add') {
+            entries.push({...data, source:{type:'npm', spec:'pappai-runner-demo@latest'}});
+            catalog['runners.' + data.name + '.getVersion'] = {type:'method', version:'1', description:'Check CLI status'};
+          }
           else {
             const runner = entries.find(r => r.name === data.name);
             runner.previousEntrypoint = runner.entrypoint;
@@ -81,7 +84,7 @@
     history.replaceState(null, '', '/');
     await import('../src/panel/main.tsx');
     await click(link('add'));
-    await awaitEl('#runner-source-type');
+    await awaitEl('#runner-source-npm');
     assert(el('.action-column #runner-installer') && !el('#nav-runners'), 'installer placement');
     fill('#runner-source', 'pappai-runner-example@latest');
     await wait(() => el('#runner-name').value === 'example', 'suggested name');
@@ -98,6 +101,10 @@
     await click(link('add'));
     await button('Retry registration');
     await status('demo registered.');
+    await click('#runner-installer a[href$="runners.demo.getVersion"]');
+    await awaitEl('#method-call');
+    assert(el('#feature').value === 'runners.demo.getVersion', 'CLI status uses ordinary workspace method');
+    await click(link('add'));
     assert(commands.length === 1 && calls.length === 2, 'registration retry ran installer');
     assert(calls.every(c => c.method === '$.runners.add' && c.data.name === 'demo' && c.data.entrypoint === path), 'wrong registration');
     await button('Back to runner settings');
@@ -116,7 +123,7 @@
     assert(calls.at(-2).method === '$.runners.restart' && calls.at(-2).data.entrypoint === newPath, 'wrong update');
     assert(calls.at(-1).method === '$.runners.restart' && calls.at(-1).data.entrypoint === path && commands.length === 2, 'wrong rollback');
     await button('Back to runner settings');
-    fill('#runner-source-type','custom');
+    await click('#runner-source-custom');
     await awaitEl('#entrypoint');
     assert(!el('#runner-name'), 'custom name must come from path');
     const customPath = path.replace('/demo/', '/custom/');

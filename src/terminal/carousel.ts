@@ -3,6 +3,10 @@
 const releaseDelay = 72;
 const settleTime = 190;
 
+export function activeStaticSlide(container: HTMLElement) {
+  return container.querySelector<HTMLElement>('#terminal-launch:not([hidden]), .terminal-failed-frame:not([hidden])');
+}
+
 export class TabCarousel {
   private ids: (number | null)[] = [];
   private index = -1;

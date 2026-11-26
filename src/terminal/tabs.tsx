@@ -2,7 +2,7 @@ import {type CSSProperties, useCallback, useLayoutEffect, useRef, useState} from
 import {flushSync} from 'react-dom';
 import {TerminalView} from './view';
 import {bindTabSwipe} from './trackpad';
-import {bindLaunchSwipe} from './touch';
+import {bindStaticSlideSwipe} from './touch';
 import {TabCarousel} from './carousel';
 import {keyboardInset} from './viewport';
 import {rememberTheme, savedTheme, themeStyle, type ThemeName} from './themes';
@@ -117,7 +117,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     const controller = new TabCarousel(track.current!, id => fromSwipe.current(id));
     carousel.current = controller;
     bindTabSwipe(workspace.current!, controller, bindings.signal);
-    bindLaunchSwipe(track.current!, controller, bindings.signal);
+    bindStaticSlideSwipe(track.current!, controller, bindings.signal);
     return () => { bindings.abort(); controller.dispose(); carousel.current = null; };
   }, []);
   useLayoutEffect(() => { carousel.current?.sync(visible ? [...slides, null] : [], selected); });

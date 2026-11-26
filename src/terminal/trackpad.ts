@@ -1,4 +1,4 @@
-import type {TabCarousel} from './carousel';
+import {activeStaticSlide, type TabCarousel} from './carousel';
 import type {Terminal} from '@xterm/xterm';
 
 const captureWheel = {capture: true, passive: false};
@@ -49,7 +49,7 @@ export function bindTabSwipe(workspace: HTMLElement, carousel: TabCarousel, sign
     const hit = document.elementFromPoint(event.clientX, event.clientY);
     if (!hit || !workspace.contains(hit)) return;
     const screen = workspace.querySelector<HTMLElement>('.terminal-frame:not([hidden]) .terminal-screen:not([inert])');
-    const surface = screen ?? workspace.querySelector<HTMLElement>('#terminal-launch:not([hidden]), .terminal-frame:not([hidden]) .terminal-launch-error');
+    const surface = screen ?? activeStaticSlide(workspace);
     if (!surface) return;
     // During a slide, the departing pane is inert. The exposed part of the deck
     // already belongs to the incoming session for wheel input.

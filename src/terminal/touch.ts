@@ -1,5 +1,5 @@
 import type {Terminal} from '@xterm/xterm';
-import type {TabCarousel} from './carousel';
+import {activeStaticSlide, type TabCarousel} from './carousel';
 
 type Point = {clientX: number; clientY: number};
 type Gesture =
@@ -19,26 +19,31 @@ function pairMotion(a: Touch, b: Touch, startA: Touch, startB: Touch) {
   return {dx, span, horizontal, opposite: dxA*dxB < 0};
 }
 
-// The launch form keeps native single-finger input, selection and scrolling.
-export function bindLaunchSwipe(track: HTMLElement, carousel: TabCarousel, signal: AbortSignal) {
+// The launch form and failed tabs keep native single-finger selection and scrolling.
+export function bindStaticSlideSwipe(track: HTMLElement, carousel: TabCarousel, signal: AbortSignal) {
   const deck = track.parentElement!;
-  const form = track.querySelector<HTMLElement>('#terminal-launch')!;
+  let surface: HTMLElement | undefined;
   let starts: Map<number, Touch> | undefined;
   let dragging = false;
   function reset() {
     if (dragging) carousel.cancel();
     dragging = false;
     starts = undefined;
+    surface = undefined;
   }
   deck.addEventListener('touchstart', event => {
-    if (event.touches.length !== 2 || form.hidden) { reset(); return; }
+    reset();
+    if (event.touches.length !== 2) return;
+    const slide = activeStaticSlide(track);
+    if (!slide) return;
     const points = Array.from(event.touches);
-    if (points.every(p => p.target instanceof Node && (form.contains(p.target) || p.target === track || p.target === deck))) {
+    if (points.every(p => p.target instanceof Node && (slide.contains(p.target) || p.target === track || p.target === deck))) {
+      surface = slide;
       starts = new Map(points.map(p => [p.identifier,p]));
     }
   }, {capture:true, passive:true, signal});
   deck.addEventListener('touchmove', event => {
-    if (!starts || form.hidden || event.touches.length !== 2) return;
+    if (!starts || !surface || surface.hidden || !surface.isConnected || event.touches.length !== 2) return;
     const [a,b] = Array.from(event.touches);
     const startA = starts.get(a.identifier), startB = starts.get(b.identifier);
     if (!startA || !startB) return;
@@ -52,6 +57,7 @@ export function bindLaunchSwipe(track: HTMLElement, carousel: TabCarousel, signa
     if (dragging) carousel.release();
     dragging = false;
     starts = undefined;
+    surface = undefined;
   }, {capture:true, signal});
   deck.addEventListener('touchcancel', reset, {capture:true, signal});
   signal.addEventListener('abort', reset, {once:true});

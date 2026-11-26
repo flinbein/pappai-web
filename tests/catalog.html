@@ -83,11 +83,14 @@
     }
     await text('#feature-panel [data-action="methods/guide.run"]','Run query');
     await click('[data-action="methods/guide.run"]');
-    await text('#feature-doc','Run query manual');
+    await wait(() => el('#method-call'), 'generic method form');
+    assert(!el('#feature-doc') && !el('#refresh') && !el('.tree-heading'), 'unexpected method manual or tree toolbar');
     assert(el('[aria-label="Expand guide.run"]'), 'opening a method expanded its children');
     fill('#arguments','{"text":"hello"}');
+    const beforePaneSwitch = history.length;
     await click('.breadcrumbs button:nth-of-type(2)');
     await wait(() => el('#workspace[data-pane=node]'), 'node breadcrumb');
+    assert(beforePaneSwitch === history.length, 'pane switch added history');
     assert(location.pathname.endsWith('/methods/guide.run') && el('#arguments').value.includes('hello'), 'mobile route lost form');
     await click('[aria-label="Expand guide.run"]');
     await click('[data-action="methods/guide.run.example"]');
@@ -97,16 +100,15 @@
     await text('#feature-doc','Publication manual');
     assert(!el('#method-call'), 'event has call form');
     await click('[data-action="methods/guide.shell"]');
-    await text('#feature-doc','Launch shell manual');
+    await text('#terminal-launch #feature-doc','Launch shell manual');
     await wait(() => el('#start-terminal'), 'CLI launcher');
-    assert(el('#feature-schema').textContent.includes('additionalProperties'), 'CLI schema missing');
+    assert(el('#terminal-launch #feature-schema').textContent.includes('additionalProperties'), 'CLI schema missing');
     await click('[data-node=future]');
     await text('#node-id','future');
     await click('[aria-label="Expand $.lifecycle"]');
     assert(!el('#lifecycle-start') && !calls.some(call => call.node === 'future'), 'unknown version ran custom logic');
     await click('[data-action="methods/%24.lifecycle.start"]');
-    await text('#feature-doc','Start node manual');
-    assert(el('#method-call'), 'unknown version missing generic form');
+    await wait(() => el('#method-call'), 'unknown version missing generic form');
     for (const mode of ['default','folder','empty','unrestricted']) {
       await click('[data-node=team]');
       await text('#node-id','team');

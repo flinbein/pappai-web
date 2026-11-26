@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { call, formatJSON, parseJSON, supports } from './api';
+import { call, formatJSON, parseJSON } from './api';
 import type { Catalog, Feature } from './api';
-import { field, Form, NoRestrictions, Submit, useMounted } from './controls';
+import { field, Form, Submit, useMounted } from './controls';
 import { NodeActionLink } from './node-action-link';
 import type { NodeNavigation } from './node-action-link';
 import type { Refresh } from './workspace';
@@ -63,34 +63,33 @@ export function FeatureLinks({ catalog, ...navigation }: NodeNavigation & { cata
 interface MethodProps {
   id: string;
   name: string;
-  catalog: Catalog;
   feature: Feature;
-  chooseFeature: (name: string) => void;
   refresh: Refresh;
-  children?: ReactNode;
+}
+
+function FeatureSchema({ feature }: { feature: Feature }) {
+  return feature.schema !== undefined && <details id="schema-block">
+    <summary>JSON schema</summary><pre id="feature-schema">{formatJSON(feature.schema)}</pre>
+  </details>;
 }
 
 export function FeatureReference({ feature }: { feature: Feature }) {
   return <>
     <p id="feature-description">{feature.type} · v{feature.version} · {feature.description}</p>
-    <pre id="feature-doc">{feature.doc}</pre>
-    {feature.schema !== undefined && <details id="schema-block">
-      <summary>JSON schema</summary><pre id="feature-schema">{formatJSON(feature.schema)}</pre>
-    </details>}
+    {feature.doc && <pre id="feature-doc">{feature.doc}</pre>}
+    <FeatureSchema feature={feature} />
   </>;
 }
 
-export function Method({ id, name, catalog, feature, chooseFeature, refresh, children }: MethodProps) {
+export function Method({ id, name, feature, refresh }: MethodProps) {
   const [result, setResult] = useState('');
   const [draft, setDraft] = useState(name === 'agent.execute' ? '{ "input": "" }' : '{}');
   const mounted = useMounted();
+  if (feature.type !== 'method') return <><h2>{name}</h2><FeatureReference feature={feature} /></>;
   return <>
     <h2>{name}</h2>
-    <label>Feature<select id="feature" value={name} onChange={event => chooseFeature(event.target.value)}>
-      {Object.keys(catalog).sort().map(value => <option key={value}>{value}</option>)}
-    </select></label>
-    <FeatureReference feature={feature} />
-    {children ?? (feature.type === 'method' && <Form id="method-call" feedback={setResult} submit={async form => {
+    <FeatureSchema feature={feature} />
+    <Form id="method-call" feedback={setResult} submit={async form => {
       const data = parseJSON(field(form, 'arguments'));
       setResult('Running…');
       const value = await call(id, name, data, feature.version);
@@ -99,10 +98,8 @@ export function Method({ id, name, catalog, feature, chooseFeature, refresh, chi
     }}>
       <label>Method arguments (JSON)<textarea id="arguments" name="arguments" rows={5} spellCheck={false} required
         value={draft} onChange={event => setDraft(event.target.value)} /></label>
-      {name === '$.permissions.set' && supports(catalog, '$.permissions') &&
-        <NoRestrictions onSelect={() => setDraft(formatJSON({ permissions: null }))} />}
       <Submit>Call method</Submit>
-    </Form>)}
+    </Form>
     <pre id="method-result" role="status">{result}</pre>
   </>;
 }

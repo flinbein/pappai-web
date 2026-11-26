@@ -8,7 +8,7 @@
   const profile = {id:'profile-demo',parentId:'~',type:'profile',name:'Demo'};
   const twin = {...profile,id:'profile-twin'};
   const catalog = {
-    inspect:{type:'cli',version:'1',description:'Inspect this profile',schema:{input:{type:'object',properties:{args:{type:'array',items:{enum:['valid']}},env:{type:'object',additionalProperties:{type:'string'}}},additionalProperties:false}}},
+    inspect:{type:'cli',version:'1',description:'Inspect this profile',doc:'Choose a supported inspection mode.',schema:{input:{type:'object',properties:{args:{type:'array',items:{enum:['valid']}},env:{type:'object',additionalProperties:{type:'string'}}},additionalProperties:false}}},
     report:{type:'cli',version:'1',description:'Print report',schema:{input:{type:'object',additionalProperties:false}}}
   };
   let confirms = 0, accept = false;
@@ -75,6 +75,10 @@
     await click('[data-cli-method=inspect]');
     await wait(() => el('#terminal-command'),'CLI form');
     assert(!el('#terminal-sandbox') && el('.cli-launch-context').textContent.includes(profile.id),'action context');
+    await click('#terminal-launch form .cli-reference > summary');
+    await click('#terminal-launch #schema-block > summary');
+    assert(el('#terminal-launch form #feature-doc').textContent === catalog.inspect.doc
+      && JSON.parse(el('#terminal-launch #feature-schema').textContent).input.type === 'object', 'launcher documentation and schema');
     assert(el('#start-terminal').textContent === 'Run','CLI submit label');
     fill('#terminal-command','invalid');
     await wait(() => el('#start-terminal').disabled && el('#terminal-command[aria-invalid=true]'),'invalid schema');
@@ -89,6 +93,8 @@
     fill('[aria-label="Environment value 1"]','en');
     await wait(() => !el('#start-terminal').disabled,'valid input');
     await launch(1);
+    assert(el('#terminal-launch[hidden] .cli-reference') && !el('.terminal-frame .cli-reference')
+      && !el('.action-column > .cli-reference'), 'active terminal is free of documentation panels');
     assert(JSON.stringify(sockets[0].request.cli)===JSON.stringify({node:profile.id,method:'inspect',input:{args:['valid'],env:{LANG:'en'}}}),'CLI frame');
     sockets[0].emit({started:true,program:'tool'});
     const first = active();
@@ -159,6 +165,26 @@
     await wait(() => !shellItem.isConnected,'exit complete');
     assert(position() < beforeClose, 'next tab occupies the released space');
     await wait(() => el('#new-terminal[aria-selected=true]'),'closing shell skips collapsed groups');
+    const originalEntry = history.state.key;
+    headers.find(header => JSON.parse(header.dataset.cliGroup)[0] === twin.id).click();
+    await wait(() => selection(5), 'select a grouped terminal in the original entry');
+    await click('[data-node="profile-twin"]');
+    await wait(() => location.pathname === '/nodes/profile-twin' && el('#node-id')?.textContent === twin.id, 'navigate to the node');
+    await click('#nav-terminal');
+    await wait(() => selection(5) && history.state.key !== originalEntry, 'new terminal entry');
+    const nextEntry = history.state.key;
+    await click('#new-terminal');
+    history.go(-2);
+    await wait(() => history.state.key === originalEntry && selection(5)?.closest('.cli-group').dataset.expanded === 'true',
+      'Back restores the selected terminal and its group');
+    history.go(2);
+    await wait(() => history.state.key === nextEntry && el('#new-terminal[aria-selected=true]'), 'Forward restores the launch form');
+    await click('[data-close-terminal="5"]');
+    await wait(() => !el('[data-terminal="5"]'), 'remove the terminal saved by the older entry');
+    history.go(-2);
+    await wait(() => history.state.key === originalEntry && history.state.pappaiView.terminal.id === null &&
+      el('#new-terminal[aria-selected=true]'), 'an entry whose terminal was removed restores the launch form');
+    assert(sockets.length === 5, 'history navigation preserved existing PTYs');
     document.querySelector('output').textContent='pass';
   } catch(error) {document.querySelector('output').textContent=error.stack;}
   finally {await nativeFetch('/test-finished');}

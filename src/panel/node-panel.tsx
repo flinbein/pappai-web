@@ -1,5 +1,4 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
 import { call, errorMessage, formatJSON, getCatalog, statusLabel, supports } from './api';
 import type { Catalog, DirectoryNode, Status } from './api';
 import { Action, Form, Submit, useMounted } from './controls';
@@ -7,10 +6,11 @@ import { snapshotReader } from './refresh-snapshot';
 import { usePappaiEvent } from './use-pappai-event';
 import { AppManagement } from './app-management';
 import { canCreate, choices, CreateNode } from './create-node';
-import { FeatureLinks, FeatureReference, Method } from './features';
+import { FeatureLinks, Method } from './features';
 import { NodeActionLink } from './node-action-link';
 import { TerminalSlot } from './terminal-slot';
 import { Profile } from './profile';
+import { Permissions } from './permissions';
 import { RunnerCatalogRevision, RunnerInstallerSlot } from './runner-installer-slot';
 import type { Refresh, Reply } from './workspace';
 
@@ -81,7 +81,10 @@ export function NodePanel({ node, nodes, action, chooseAction, refresh, reply, u
   const lifecycle = supports(catalog, '$.lifecycle');
   const manageApp = supports(catalog, '$.app');
   const manageProfile = supports(catalog, '$.profile');
-  const manageRunners = supports(catalog, '$.runners') && catalog?.['$.runners.add']?.type === 'method';
+  const setPermissions = catalog?.['$.permissions.set'];
+  const editPermissions = supports(catalog, '$.permissions') && setPermissions?.type === 'method';
+  const manageRunners = supports(catalog, '$.runners') && (catalog?.['$.runners.add']?.type === 'method'
+    || (catalog?.['$.runners.list']?.type === 'method' && ['$.runners.restart', '$.runners.delete'].some(key => catalog[key]?.type === 'method')));
   const readStatus = useMemo(() => snapshotReader(
     () => call<{status: Status}>(id, '$.lifecycle.get'),
     result => { if (mounted.current) setStatus(result.status); },
@@ -108,6 +111,12 @@ export function NodePanel({ node, nodes, action, chooseAction, refresh, reply, u
   function renderAction() {
     if (!catalog) return error ? null : <p role="status">Loading actions…</p>;
     if (segments.length === 1) {
+      if (section === 'runners' && manageRunners) return <RunnerInstallerSlot node={id} catalog={catalog} />;
+      if (section === 'permissions' && editPermissions) {
+        const get = catalog['$.permissions.get'];
+        return <Permissions id={id} getVersion={get?.type === 'method' ? get.version : undefined}
+          setVersion={setPermissions.version} refresh={refresh} />;
+      }
       if (section === 'manage' && manageApp) {
         return <AppManagement id={id} refresh={refresh} feedback={setError} {...lifecycleProps} onCatalog={setCatalog} />;
       }
@@ -121,16 +130,8 @@ export function NodePanel({ node, nodes, action, chooseAction, refresh, reply, u
     }
     if (segments.length === 2) {
       if (section === 'methods' && name && contract) {
-        if (contract.type === 'cli') return <>
-          <details key={name} className="cli-reference" open><summary>{name} documentation</summary>
-            <FeatureReference feature={contract} />
-          </details>
-          <TerminalSlot node={id} method={name} schema={contract.schema?.input} />
-        </>;
-        return <Method key={name} id={id} name={name} feature={contract} catalog={catalog} refresh={refresh}
-          chooseFeature={feature => chooseAction('methods/' + encodeURIComponent(feature))}>
-          {manageRunners && name === '$.runners.add' ? <RunnerInstallerSlot node={id} catalog={catalog} /> : undefined}
-        </Method>;
+        if (contract.type === 'cli') return <TerminalSlot node={id} method={name} feature={contract} />;
+        return <Method key={name} id={id} name={name} feature={contract} refresh={refresh} />;
       }
       if (section === 'create' && kind) {
         return <CreateNode parent={node} nodes={nodes} catalog={catalog} type={kind}
@@ -156,14 +157,14 @@ export function NodePanel({ node, nodes, action, chooseAction, refresh, reply, u
         <Action id="lifecycle-stop" className="secondary" disabled={status === 'stopped' || status === 'stopping'}
           feedback={setError} run={() => changeLifecycle('stop')}>Stop</Action>
       </div></section>}
-      {(createChoices.length > 0 || chat || manageApp || manageProfile || manageRunners || cliShortcuts.length > 0) && <section id="actions">
+      {(createChoices.length > 0 || chat || manageApp || manageProfile || manageRunners || editPermissions || cliShortcuts.length > 0) && <section id="actions">
         <h2>Actions</h2>
         <ul className="action-list">
           {chat && <li><NodeActionLink {...navigation} id="show-chat" path="chat">Message agent</NodeActionLink></li>}
           {manageApp && <li><NodeActionLink {...navigation} id="show-management" path="manage">Manage APP</NodeActionLink></li>}
           {manageProfile && <li><NodeActionLink {...navigation} id="show-profile" path="profile">Profile settings</NodeActionLink></li>}
-          {manageRunners && <li><Link className="action-link" id="show-runners"
-            to={'/nodes/' + encodeURIComponent(id) + '/methods/%24.runners.add'}>Manage runners</Link></li>}
+          {manageRunners && <li><NodeActionLink {...navigation} id="show-runners" path="runners">Manage runners</NodeActionLink></li>}
+          {editPermissions && <li><NodeActionLink {...navigation} path="permissions">Edit permissions</NodeActionLink></li>}
           {cliShortcuts.map(([method]) =>
             <li key={method}><NodeActionLink {...navigation} cliMethod={method} path={'methods/' + encodeURIComponent(method)}>{method}</NodeActionLink></li>)}
           {createChoices.map(([value, label], index) => <li key={value}>

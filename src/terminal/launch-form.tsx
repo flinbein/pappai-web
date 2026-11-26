@@ -2,6 +2,7 @@ import {useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {forbidsField, inputValidator, joinWords, pointerKey, splitWords} from './launch-input';
 import type {CliAction, CliInput, Issue, TerminalStart} from './launch-input';
 import {ThemeChoices, type ThemeName} from './themes';
+import {FeatureReference} from '../panel/features';
 
 interface Props {
   action?: CliAction;
@@ -22,9 +23,10 @@ export function LaunchForm({action, visible, theme, chooseTheme, defaultSandbox,
   const [envTouched, setEnvTouched] = useState(false);
   const [sandbox, setSandbox] = useState(defaultSandbox);
   const form = useRef<HTMLFormElement>(null);
-  const validate = useMemo(() => inputValidator(action?.schema), [action?.schema]);
-  const showArgs = !action || !forbidsField(action.schema, 'args');
-  const showEnv = !action || !forbidsField(action.schema, 'env');
+  const schema = action?.feature?.schema?.input;
+  const validate = useMemo(() => inputValidator(schema), [schema]);
+  const showArgs = !forbidsField(schema, 'args');
+  const showEnv = !forbidsField(schema, 'env');
   const issues: Issue[] = [];
   let words = args;
   if (!structured) {
@@ -62,6 +64,10 @@ export function LaunchForm({action, visible, theme, chooseTheme, defaultSandbox,
     start(action ? {cli:{node:action.node, method:action.method, input}} : {argv:words, env:variables}, !action && canChooseSandbox && sandbox);
   }}>
     {action && <header className="cli-launch-context"><strong>{action.method}</strong><code>{action.node}</code></header>}
+    {action?.feature && <details className="cli-reference">
+      <summary>Documentation</summary>
+      <FeatureReference feature={action.feature}/>
+    </details>}
     {showArgs && <fieldset className="launch-fields" aria-invalid={invalid('#/args')}>
       <legend>{label}</legend>
       {!structured && <textarea id="terminal-command" name="command" aria-label={label} rows={1} value={command}

@@ -1,5 +1,6 @@
 import {compileSchema, draft2020, type JsonSchema} from 'json-schema-library';
 import {addFormats} from 'json-schema-library/formats';
+import type {Feature} from '../panel/api';
 
 addFormats([draft2020]);
 
@@ -10,7 +11,7 @@ export interface CliInput {
 export interface CliAction {
   node: string;
   method: string;
-  schema?: unknown;
+  feature?: Feature;
 }
 export type TerminalStart = {argv: string[]; env: Record<string, string>} | {cli: {node: string; method: string; input: CliInput}};
 

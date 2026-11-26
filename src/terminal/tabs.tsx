@@ -8,6 +8,7 @@ import {keyboardInset} from './viewport';
 import {rememberTheme, savedTheme, themeStyle, type ThemeName} from './themes';
 import {LaunchForm} from './launch-form';
 import {activeTerminalPort} from '../panel/shared-client';
+import {useEntryState} from '../panel/entry-state';
 import type {TerminalEntry, TerminalEvent, TerminalRequest, TerminalState} from './protocol';
 import type {DirectoryNode} from '../panel/api';
 import type {CliAction, TerminalStart} from './launch-input';
@@ -49,13 +50,22 @@ function groupStatus(tabs: TerminalTab[]): TerminalState {
 interface Props {
   nodes: DirectoryNode[];
   action?: CliAction;
+  entryKey?: string;
   visible: boolean;
   canChooseSandbox: boolean;
   defaultSandbox: boolean;
   onOnlineChange(online: boolean): void;
 }
 
-export default function TerminalTabs({nodes, action, visible, canChooseSandbox, defaultSandbox, onOnlineChange}: Props) {
+export default function TerminalTabs({nodes, action, entryKey, visible, canChooseSandbox, defaultSandbox, onOnlineChange}: Props) {
+  const port = activeTerminalPort();
+  // A page-local connection or an older shared worker can restore tabs only
+  // within this document. Neither supplies a registry identity across reloads.
+  const [pageId] = useState(() => crypto.getRandomValues(new Uint32Array(4)).join('-'));
+  const [worker, setWorker] = useState(port ? undefined : pageId);
+  const [entry, patchEntry] = useEntryState();
+  const [restored, setRestored] = useState<{key:string; worker:string}>();
+  const ready = !!entryKey && restored?.key === entryKey && restored.worker === worker;
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [selections, setSelections] = useState<Record<string, number | null>>({});
   const [expanded, setExpanded] = useState<string>();
@@ -91,8 +101,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     else if (id !== undefined) setTabs(items => items.map(tab => tab.id === id ? {...tab, theme} : tab));
   }
   const nextId = useRef(1);
-  const port = activeTerminalPort();
-  const launches = useRef(new Map<string,string | undefined>());
+  const launches = useRef(new Map<string,{group?:string; entryKey?:string}>());
   function post(message: TerminalRequest) { port?.postMessage(message); }
   const workspace = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
@@ -109,6 +118,23 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     });
     if (group) setExpanded(group);
   }
+  useLayoutEffect(() => {
+    if (!entryKey || !worker) {
+      if (restored) setRestored(undefined);
+      return;
+    }
+    const saved = entry.terminal;
+    if (!ready) {
+      // The first authoritative registry distinguishes a missing terminal from
+      // one whose worker is still attaching. IDs start over in each worker.
+      const id = !saved ? selected : saved.worker === worker && saved.scope === scope ? saved.id : null;
+      const tab = tabs.find(item => item.id === id && !item.closing && (!scope || item.group === scope));
+      select(tab?.id ?? null, tab?.group);
+      setRestored({key:entryKey, worker});
+    } else if (!saved || saved.worker !== worker || saved.scope !== scope || saved.id !== selected) {
+      patchEntry({terminal:{worker, scope, id:selected}});
+    }
+  });
   function chooseTab(id: number | null, group?: string) {
     // A wheel gesture can commit a selection without focusing the browser window.
     const tab = tabs.find(item => item.id === id);
@@ -136,7 +162,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     bindStaticSlideSwipe(track.current!, controller, bindings.signal);
     return () => { bindings.abort(); controller.dispose(); carousel.current = null; };
   }, []);
-  useLayoutEffect(() => { carousel.current?.sync(visible ? [...slides, null] : [], selected); });
+  useLayoutEffect(() => { carousel.current?.sync(visible && ready ? [...slides, null] : [], selected); });
   const online = tabs.some(tab => !tab.closing && tab.state === 'online');
   useLayoutEffect(() => { if (!port) onOnlineChange(online); }, [port, online, onOnlineChange]);
   useLayoutEffect(() => {
@@ -154,7 +180,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     const nodeName = 'cli' in command ? nodes.find(node => node.id === command.cli.node)?.name : undefined;
     if (port) {
       const requestId = crypto.randomUUID();
-      launches.current.set(requestId,group);
+      launches.current.set(requestId,{group,entryKey});
       post({type:'terminal.launch',requestId,command,sandbox,theme:launchTheme,nodeName});
       return;
     }
@@ -175,6 +201,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     flushSync(() => {
       setSelections(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => {
         if (value === null || !ids.has(value)) return [key,value];
+        if (key === scope && entryKey && !visible) return [key,null];
         const pool = remaining.filter(tab => key ? tab.group === key : !tab.group || tab.group === expanded);
         return [key, pool.find(tab => tab.id > value)?.id ?? pool.at(-1)?.id ?? null];
       })));
@@ -197,11 +224,15 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
   useLayoutEffect(() => {
     registryHandler.current = event => {
       if (event.type === 'terminal.created') {
-        if (!launches.current.has(event.requestId)) return;
-        select(event.id,launches.current.get(event.requestId));
+        const launch = launches.current.get(event.requestId);
+        if (!launch) return;
         launches.current.delete(event.requestId);
-        setFormVersion(value => value + 1);
+        if (launch.entryKey === entryKey) {
+          select(event.id,launch.group);
+          setFormVersion(value => value + 1);
+        }
       } else if (event.type === 'terminal.registry') {
+        setWorker(event.worker ?? pageId);
         const incoming = event.entries.map((entry: TerminalEntry) => ({
           ...entry,group:entry.cli ? groupId(entry.cli) : undefined,
         }));
@@ -293,7 +324,7 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
     </div>
     <div className="terminal-deck"><div className="terminal-track" ref={track}>
       {tabs.filter(tab => !tab.closing).map(tab => {
-        const active = visible && selected === tab.id;
+        const active = ready && visible && selected === tab.id;
         const position = slides.indexOf(tab.id);
         if (tab.state === 'failed') return <div key={tab.id} className="terminal-frame terminal-failed-frame" data-outside={position < 0 || undefined}
           style={{...themeStyle(tab.theme),order:position}} inert={!active} hidden={!active} id={'terminal-panel-' + tab.id}
@@ -302,8 +333,8 @@ export default function TerminalTabs({nodes, action, visible, canChooseSandbox, 
           onThemeChange={theme => chooseTheme(theme, tab.id)} connection={tab.state} visible={active} update={update} carousel={carousel}/>;
       })}
       <div id="terminal-launch" role="tabpanel" aria-labelledby="new-terminal" style={{order:slides.length}}
-        hidden={!visible || selected !== null} inert={!visible || selected !== null}>
-        <LaunchForm key={scope + ':' + formVersion} action={action} visible={visible && selected === null} theme={launchTheme} chooseTheme={chooseTheme}
+        hidden={!ready || !visible || selected !== null} inert={!ready || !visible || selected !== null}>
+        <LaunchForm key={scope + ':' + formVersion} action={action} visible={ready && visible && selected === null} theme={launchTheme} chooseTheme={chooseTheme}
           defaultSandbox={defaultSandbox} canChooseSandbox={canChooseSandbox} start={launch}/>
       </div>
     </div></div>

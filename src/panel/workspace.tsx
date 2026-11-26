@@ -9,6 +9,7 @@ import { RunnerInstallerProvider } from './runner-installer-slot';
 import { snapshotReader } from './refresh-snapshot';
 import { TerminalProvider, TerminalSlot } from './terminal-slot';
 import { usePappaiEvent } from './use-pappai-event';
+import { useEntryState } from './entry-state';
 
 type Pane = 'tree' | 'node' | 'action';
 const narrowScreen = matchMedia('(max-width: 45rem)');
@@ -18,7 +19,9 @@ function subscribeWidth(notify: () => void) {
 }
 function nodePath(id: string) { return '/nodes/' + encodeURIComponent(id); }
 function actionName(action: string) {
-  const names: Record<string, string> = {create: 'Create', chat: 'Chat', manage: 'Manage', profile: 'Profile'};
+  const names: Record<string, string> = {
+    create: 'Create', chat: 'Chat', manage: 'Manage', profile: 'Profile', runners: 'Manage runners', permissions: 'Edit permissions',
+  };
   const [group, ...parts] = action.split('/');
   let name = parts.join('/');
   try { name = decodeURIComponent(name); } catch { /* Display an invalid path literally. */ }
@@ -92,15 +95,16 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const terminalRoute = location.pathname === '/terminal';
   const requestedSandbox = new URLSearchParams(location.search).get('sandbox') === '1';
   const [live, setLive] = useState(false);
-  const [view, setView] = useState<{key: string; pane: Pane}>();
+  const [view, patchView] = useEntryState();
   const narrow = useSyncExternalStore(subscribeWidth, () => narrowScreen.matches);
   const defaultPane = action ? 'action' : location.pathname === '/' ? 'tree' : 'node';
-  const pane = view?.key === location.key ? view.pane : defaultPane;
+  const pane = view.pane === 'tree' || (view.pane === 'node' && location.pathname !== '/') ||
+    (view.pane === 'action' && action) ? view.pane : defaultPane;
   const breadcrumbs = useRef<HTMLElement>(null);
   useEffect(() => {
     if (narrow) breadcrumbs.current?.querySelector('[aria-current="step"]')?.scrollIntoView({block:'nearest',inline:'nearest'});
   }, [narrow, pane, location.key]);
-  const showPane = (next: Pane) => setView({ key: location.key, pane: next });
+  const showPane = (next: Pane) => patchView({pane: next});
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (menu.current) menu.current.open = false; }, [location.key]);
   const [folded, setFolded] = useState(new Set<string>());
@@ -184,7 +188,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
       {action && <><span aria-hidden="true">›</span><button aria-current={pane === 'action' ? 'step' : undefined}
         onClick={() => showPane('action')}>{actionName(action)}</button></>}
     </nav>
-    <aside className="directory" aria-labelledby="tree-title">
+    <aside className="directory" aria-label="Node tree">
       <details ref={menu} className="account-menu">
         <summary aria-label={'Account ' + account}><span className="avatar" aria-hidden="true">{account?.slice(0,1).toUpperCase()}</span>
           <strong>{account}</strong><span className="chevron" aria-hidden="true">⌄</span></summary>
@@ -193,9 +197,6 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
           <Action id="logout" feedback={feedback} run={signOut}>Sign out</Action>
         </div>
       </details>
-      <div className="tree-heading"><h2 id="tree-title">Node tree</h2>
-        <Action id="refresh" className="icon" aria-label="Refresh tree" title="Refresh tree" run={refresh} feedback={feedback}>↻</Action>
-      </div>
       <div className="tree-scroll"><Tree nodes={nodes} selected={selected} folded={folded} toggle={id => setFolded(previous => {
         const next = new Set(previous);
         if (!next.delete(id)) next.add(id);
@@ -205,7 +206,12 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
       <nav className="tools" aria-label="Tools">
         <a href="/files/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z"/></svg>Files</a>
         <Link id="nav-terminal" to="/terminal" aria-current={terminalRoute ? 'page' : undefined}
-          onClick={() => showPane('node')}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 3 3-3 3m5 0h5"/></svg>Terminal
+          onClick={event => {
+            if (terminalRoute && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+              event.preventDefault();
+              showPane('node');
+            }
+          }}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 3 3-3 3m5 0h5"/></svg>Terminal
           {live && <i className="online-dot" aria-label="Connected" />}</Link>
       </nav>
     </aside>

@@ -54,11 +54,16 @@ export default function RunnerInstaller({node, catalog, changed}: InstallerProps
   const [path, setPath] = useState('');
   const [phase, setPhase] = useState<Phase>('preparing');
   const [message, setMessage] = useState('');
+  const [removing, setRemoving] = useState(false);
+  const [removed, setRemoved] = useState('');
   const existing = runners.find(runner => runner.name === selected);
   const method = selected ? '$.runners.restart' : '$.runners.add';
   const list = catalog['$.runners.list'];
   const getVersion = job && 'runners.' + job.name + '.getVersion';
   const canUpdate = list?.type === 'method' && catalog['$.runners.restart']?.type === 'method';
+  const canAdd = catalog['$.runners.add']?.type === 'method';
+  const deleteMethod = catalog['$.runners.delete'];
+  const canRemove = list?.type === 'method' && deleteMethod?.type === 'method';
   useEffect(() => {
     if (list?.type !== 'method') return;
     let active = true;
@@ -77,6 +82,27 @@ export default function RunnerInstaller({node, catalog, changed}: InstallerProps
     setRef(runner?.source?.ref ?? '');
     setEditedName(undefined);
     setMessage('');
+    setRemoved('');
+  }
+
+  async function removeRunner() {
+    if (!existing || existing.name === 'process' || !canRemove || removing) return;
+    if (!window.confirm('Remove runner ' + existing.name + ' and its managed installation files?')) return;
+    setRemoving(true);
+    setMessage('');
+    try {
+      await call(node, '$.runners.delete', {name:existing.name}, deleteMethod.version);
+      if (!mounted.current) return;
+      chooseRunner('');
+      setRemoved(existing.name + ' removed.');
+      setRunners(previous => previous.filter(runner => runner.name !== existing.name));
+      changed();
+      setRevision(value => value + 1);
+    } catch (error) {
+      if (mounted.current) setMessage(errorMessage(error));
+    } finally {
+      if (mounted.current) setRemoving(false);
+    }
   }
 
   const register = useCallback(async (task: Job, entrypoint: string) => {
@@ -104,6 +130,7 @@ export default function RunnerInstaller({node, catalog, changed}: InstallerProps
   }, []);
 
   function start(previousEntrypoint?: string) {
+    setRemoved('');
     const spec = source.trim();
     const name = selected || (type === 'custom' ? nameFromEntrypoint(spec) : (editedName ?? suggestedName(type, spec)).trim());
     if (!runnerName.test(name)) throw Error('Use 1–64 lowercase letters, digits, underscores or hyphens, starting with a letter.');
@@ -130,13 +157,14 @@ export default function RunnerInstaller({node, catalog, changed}: InstallerProps
     : phase === 'call-failed' ? 'Could not ' + (job.method === '$.runners.add' ? 'register ' : 'restart ') + job.name + '.'
     : 'Preparation failed.';
   return <section id="runner-installer">
-    <h2>{selected ? 'Update runner' : 'Install runner'}</h2>
-    {!job && <Form id="register-runner" feedback={setMessage} submit={async () => start()}>
-      {canUpdate && <label>Installation<select id="runner-target" value={selected} onChange={e => chooseRunner(e.target.value)}>
-        <option value="">New runner</option>
+    <h2>Manage runners</h2>
+    {!job && (canUpdate || canRemove) && <label>Installation<select id="runner-target" disabled={removing}
+      value={selected} onChange={e => chooseRunner(e.target.value)}>
+        <option value="">{canAdd ? 'New runner' : 'Select a runner'}</option>
         {runners.filter(r => r.name !== 'process').map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
-      </select></label>}
-      {existing?.entrypoint && <p>Current entrypoint <code>{existing.entrypoint}</code></p>}
+    </select></label>}
+    {!job && existing?.entrypoint && <p>Current entrypoint <code>{existing.entrypoint}</code></p>}
+    {!job && !removing && (selected ? canUpdate : canAdd) && <Form id="register-runner" feedback={setMessage} submit={async () => start()}>
       <fieldset className="runner-sources"><legend>Source</legend>
         {(['npm', 'git', 'custom'] as const).map(choice => <button type="button" key={choice}
           id={'runner-source-' + choice} aria-pressed={type === choice} className={type === choice ? '' : 'secondary'}
@@ -161,6 +189,9 @@ export default function RunnerInstaller({node, catalog, changed}: InstallerProps
           }}>Roll back</button>}
       </div>
     </Form>}
+    {!job && existing && canRemove && <button type="button" className="secondary" disabled={removing}
+      onClick={() => void removeRunner()}>Remove runner</button>}
+    {removed && <p role="status">{removed}</p>}
     {job?.command && <InstallerTerminal job={job} ready={ready} failed={failed} />}
     {job && <>
       <p id="runner-status" role="status">{status}</p>

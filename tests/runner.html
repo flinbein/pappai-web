@@ -9,9 +9,14 @@
   const path = '/run/pappai/private/runners/demo/releases/one/runner.mjs';
   const newPath = path.replace('/one/', '/two/');
   const workspace = {id:'~', parentId:null, type:'workspace', name:'Workspace'};
-  const catalog = Object.fromEntries(['add','list','restart','disable'].map(name =>
+  const catalog = Object.fromEntries(['add','list','restart','disable','delete'].map(name =>
     ['$.runners.' + name, {type:'method', version:'1', description:name}]));
   catalog['$.runners'] = {type:'document',version:'2',description:'Manage runner installations'};
+  catalog['$.runners.add'].schema = {input:{type:'object'},output:{type:'object'}};
+  catalog['$.permissions'] = {type:'document',version:'1',description:'Stored rules'};
+  catalog['$.permissions.get'] = {type:'method',version:'1',description:'Read rules'};
+  catalog['$.permissions.set'] = {type:'method',version:'1',description:'Replace rules'};
+  let permissions = [{node:'./**',discover:true}];
   let rejectFirst = true;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (url, options) => url === '/api/session'
@@ -39,6 +44,8 @@
       if (msg.method === 'help') reply.result = catalog;
       if (msg.method === 'call') {
         if (msg.params.method === '$.runners.list') reply.result = entries;
+        else if (msg.params.method === '$.permissions.get') reply.result = {permissions};
+        else if (msg.params.method === '$.permissions.set') permissions = msg.params.data.permissions;
         else {
           const {method,data} = msg.params;
           calls.push({method,data});
@@ -47,7 +54,10 @@
             entries.push({...data, source:{type:'npm', spec:'pappai-runner-demo@latest'}});
             catalog['runners.' + data.name + '.getVersion'] = {type:'method', version:'1', description:'Check CLI status'};
           }
-          else {
+          else if (method === '$.runners.delete') {
+            entries.splice(entries.findIndex(r => r.name === data.name), 1);
+            delete catalog['runners.' + data.name + '.getVersion'];
+          } else {
             const runner = entries.find(r => r.name === data.name);
             runner.previousEntrypoint = runner.entrypoint;
             runner.entrypoint = data.entrypoint;
@@ -76,18 +86,22 @@
   function fill(selector, value) {
     const node = el(selector);
     const select = node instanceof HTMLSelectElement;
-    Object.getOwnPropertyDescriptor(select ? HTMLSelectElement.prototype : HTMLInputElement.prototype, 'value').set.call(node,value);
+    const prototype = select ? HTMLSelectElement.prototype : node instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value').set.call(node,value);
     node.dispatchEvent(new Event(select ? 'change' : 'input', {bubbles:true}));
   }
   const link = method => '[data-action="methods/%24.runners.' + method + '"]';
   const status = text => wait(() => el('#runner-status')?.textContent.includes(text), text);
   try {
-    history.replaceState(null, '', '/');
+    history.replaceState(null, '', '/nodes/~/methods/%24.runners.add');
     await import('../src/panel/main.tsx');
-    await click('[aria-label="Expand $.runners"]');
-    await click(link('add'));
+    await awaitEl('#method-call');
+    assert(el('.action-column h2').textContent === '$.runners.add' && !el('#runner-installer') && !el('#feature')
+      && !el('#feature-doc') && !el('#feature-description'), 'direct runner method route must show only the generic caller');
+    assert(JSON.parse(el('#feature-schema').textContent).input.type === 'object', 'generic runner method schema');
+    await click('#show-runners');
     await awaitEl('#runner-source-npm');
-    assert(el('.action-column #runner-installer') && !el('#nav-runners'), 'installer placement');
+    assert(location.pathname === '/nodes/~/runners' && el('.action-column #runner-installer') && !el('#method-call'), 'installer placement');
     fill('#runner-source', 'pappai-runner-example@latest');
     await wait(() => el('#runner-name').value === 'example', 'suggested name');
     fill('#runner-name', 'demo');
@@ -100,13 +114,13 @@
     terminals[0].emit('ULT ' + JSON.stringify({entrypoint:path}) + '\r\n');
     assert(calls.length === 0, 'registered before process exit');
     terminals[0].emit({exitCode:0});
-    await click(link('add'));
+    await click('#show-runners');
     await button('Retry registration');
     await status('demo registered.');
     await click('#runner-installer a[href$="runners.demo.getVersion"]');
     await awaitEl('#method-call');
-    assert(el('#feature').value === 'runners.demo.getVersion', 'CLI status uses ordinary workspace method');
-    await click(link('add'));
+    assert(el('.action-column h2').textContent === 'runners.demo.getVersion', 'CLI status uses ordinary workspace method');
+    await click('#show-runners');
     assert(commands.length === 1 && calls.length === 2, 'registration retry ran installer');
     assert(calls.every(c => c.method === '$.runners.add' && c.data.name === 'demo' && c.data.entrypoint === path), 'wrong registration');
     await button('Back to runner settings');
@@ -133,6 +147,31 @@
     await click('#register-runner [type=submit]');
     await status('custom registered.');
     assert(calls.at(-1).data.name === 'custom' && commands.length === 2, 'wrong custom registration');
+    await button('Back to runner settings');
+    fill('#runner-target', 'demo');
+    const beforeRemove = calls.length;
+    window.confirm = () => false;
+    await button('Remove runner');
+    assert(calls.length === beforeRemove, 'cancelled removal called the controller');
+    window.confirm = () => true;
+    await button('Remove runner');
+    await wait(() => el('#runner-installer [role=status]')?.textContent === 'demo removed.', 'removal result');
+    assert(calls.at(-1).method === '$.runners.delete' && calls.at(-1).data.name === 'demo'
+      && !el('#runner-target option[value=demo]') && !!el('#runner-target option[value=custom]'), 'remove selected installation');
+    await click('[data-action=permissions]');
+    await wait(() => el('#edit-permissions textarea')?.value.includes('./**'), 'load stored permissions');
+    await button('No restrictions');
+    assert(permissions !== null, 'preset modified stored permissions before save');
+    await button('Save permissions');
+    await wait(() => permissions === null, 'save unrestricted permissions');
+    await click(link('add'));
+    await awaitEl('#method-call');
+    const raw = {name:'manual',entrypoint:path.replace('/demo/', '/manual/')};
+    fill('#arguments', JSON.stringify(raw));
+    await button('Call method');
+    await wait(() => el('#method-result')?.textContent === '{}', 'raw registration result');
+    assert(calls.at(-1).method === '$.runners.add' && JSON.stringify(calls.at(-1).data) === JSON.stringify(raw)
+      && commands.length === 2 && !el('#runner-installer'), 'method registration must use the supplied JSON');
     document.querySelector('output').textContent = 'pass';
   } catch (error) {
     document.querySelector('output').textContent = error.stack;

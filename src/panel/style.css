@@ -14,7 +14,7 @@ button,a,input,textarea,select,summary { font: inherit; }
 button { border: 1px solid transparent; border-radius: .4rem; background: var(--blue); color: white; padding: .5rem .85rem; cursor: pointer; }
 button:hover:not(:disabled) { filter: brightness(.92); }
 button:disabled { opacity: .5; cursor: default; }
-button.secondary,.icon { background: white; color: var(--ink); border-color: var(--line); }
+button.secondary { background: white; color: var(--ink); border-color: var(--line); }
 a { color: var(--blue); }
 :focus-visible { outline: 3px solid #b8791c; outline-offset: 2px; }
 label { display: block; margin: .85rem 0; font-weight: 550; }
@@ -26,9 +26,8 @@ pre:empty,p:empty { display: none; }
 details { margin: 1rem 0; }
 summary { color: var(--blue); font-weight: 600; cursor: pointer; }
 #signin { max-width: 30rem; margin: 8vh auto; padding: 1.5rem; }
-.tree-heading,.app-actions,.node-heading,.tabs { display: flex; align-items: center; gap: .5rem; }
-.tree-heading,.node-heading { justify-content: space-between; }
-.icon { padding: .15rem .5rem; font-size: 1.1rem; }
+.app-actions,.node-heading,.tabs { display: flex; align-items: center; gap: .5rem; }
+.node-heading { justify-content: space-between; }
 #nodes,#nodes ul { list-style: none; margin: 1rem 0 0; padding: 0; }
 #nodes ul { margin: 0 0 0 .7rem; padding-left: .3rem; border-left: 1px solid var(--line); }
 #nodes li > div { display: flex; align-items: baseline; }
@@ -74,9 +73,6 @@ dialog::backdrop { background: #142b3b70; }
 .account-items { position:absolute; z-index:5; top:100%; left:.65rem; right:.65rem; padding:.35rem; background:white; border:1px solid var(--line); border-radius:.5rem; box-shadow:0 6px 20px #19393316; }
 .account-items a,.account-items button { display:block; width:100%; padding:.55rem .65rem; border:0; border-radius:.3rem; background:transparent; text-align:left; font:inherit; color:var(--ink); text-decoration:none; }
 .account-items :is(a,button):hover,.tools a:hover { background:var(--light); }
-.tree-heading { display:flex;align-items:center;justify-content:space-between;padding:1rem 1rem .4rem; }
-.tree-heading h2 { font-size:.84rem; color:var(--muted); margin:0; }
-.tree-heading .icon { border:none;background:transparent; }
 .tree-scroll { overflow:auto; flex:1; padding:0 .7rem 1rem; }
 #nodes { margin:.4rem 0; }
 .tree-node { display:flex; align-items:baseline; gap:.55rem; }
@@ -122,5 +118,3 @@ dialog::backdrop { background: #142b3b70; }
 .terminal-portal,.terminal-outlet { height:100%; min-height:0; }
 .cli-action-column { padding:0; overflow:hidden; display:flex; flex-direction:column; }
 .cli-action-column .terminal-outlet { flex:1; height:auto; min-width:0; contain:size; }
-.cli-action-column .cli-reference { max-height:35dvh; overflow:auto; margin:0; padding:.7rem 1rem; }
-.cli-reference[open] > summary { margin-bottom:.5rem; }

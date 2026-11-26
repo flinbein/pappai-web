@@ -1,12 +1,13 @@
 import {createContext, lazy, Suspense, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
+import {useLocation} from 'react-router';
 import type {DirectoryNode} from './api';
 import {activeTerminalPort} from './shared-client';
 import type {TerminalEvent} from '../terminal/protocol';
 import type {CliAction} from '../terminal/launch-input';
 
 const TerminalTabs = lazy(() => import('../terminal/tabs'));
-type Attach = (element: HTMLElement, action?: CliAction) => () => void;
+type Attach = (element: HTMLElement, entryKey: string, action?: CliAction) => () => void;
 const AttachTerminal = createContext<Attach | null>(null);
 
 export function TerminalProvider({children, nodes, shellVisible, actionVisible, defaultSandbox, canChooseSandbox, onOnlineChange}: {
@@ -19,7 +20,8 @@ export function TerminalProvider({children, nodes, shellVisible, actionVisible, 
   onOnlineChange(online: boolean): void;
 }) {
   const [host] = useState(() => Object.assign(document.createElement('div'), {className:'terminal-portal'}));
-  const [slot, setSlot] = useState<{action?: CliAction; visible:boolean}>();
+  const [slot, setSlot] = useState<{action?: CliAction; entryKey: string}>();
+  const entryKey = useLocation().key;
   const port = activeTerminalPort();
   useLayoutEffect(() => {
     if (!port) return;
@@ -30,25 +32,26 @@ export function TerminalProvider({children, nodes, shellVisible, actionVisible, 
     port.postMessage({type:'terminal.list'});
     return () => port.removeEventListener('message', onRegistry);
   }, [port, onOnlineChange]);
-  const attach = useCallback<Attach>((element, action) => {
+  const attach = useCallback<Attach>((element, entryKey, action) => {
     element.append(host);
-    setSlot({action, visible:true});
+    setSlot({action, entryKey});
     return () => {
       host.remove();
-      setSlot(previous => previous && {...previous, visible:false});
+      setSlot(previous => previous && {...previous, entryKey:''});
     };
   }, [host]);
   return <AttachTerminal.Provider value={attach}>{children}{slot && createPortal(
-    <Suspense fallback={<p>Loading terminal…</p>}><TerminalTabs nodes={nodes} action={slot.action}
-      visible={slot.visible && (slot.action ? actionVisible : shellVisible)} defaultSandbox={defaultSandbox}
+    <Suspense fallback={<p>Loading terminal…</p>}><TerminalTabs nodes={nodes} action={slot.action} entryKey={slot.entryKey === entryKey ? entryKey : undefined}
+      visible={slot.entryKey === entryKey && (slot.action ? actionVisible : shellVisible)} defaultSandbox={defaultSandbox}
       canChooseSandbox={canChooseSandbox} onOnlineChange={onOnlineChange}/></Suspense>, host
   )}</AttachTerminal.Provider>;
 }
 
-export function TerminalSlot({node, method, schema}: Partial<CliAction>) {
+export function TerminalSlot({node, method, feature}: Partial<CliAction>) {
   const outlet = useRef<HTMLDivElement>(null);
   const attach = useContext(AttachTerminal)!;
-  useLayoutEffect(() => attach(outlet.current!, node && method ? {node, method, schema} : undefined),
-    [attach, node, method, schema]);
+  const entryKey = useLocation().key;
+  useLayoutEffect(() => attach(outlet.current!, entryKey, node && method ? {node, method, feature} : undefined),
+    [attach, entryKey, node, method, feature]);
   return <div className="terminal-outlet" ref={outlet}/>;
 }

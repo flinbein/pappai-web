@@ -88,6 +88,7 @@ function releaseMouse(s: Session) {
 }
 
 export class TerminalHub {
+  private readonly worker = crypto.randomUUID();
   private sessions = new Map<number, Session>();
   private ports = new Map<Port, {pending: number; dirty: boolean}>();
   private nextId = 1;
@@ -121,7 +122,7 @@ export class TerminalHub {
     state.dirty = false;
     state.pending = this.nextSeq++;
     const entries = Array.from(this.sessions.values(), s => ({...s.entry, owner:s.owner === port}));
-    port.postMessage({type:'terminal.registry', entries, seq:state.pending});
+    port.postMessage({type:'terminal.registry', worker:this.worker, entries, seq:state.pending});
   }
   private changed() {
     for (const port of this.ports.keys()) this.registry(port);

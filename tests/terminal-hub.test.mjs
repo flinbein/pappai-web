@@ -70,6 +70,20 @@ function setup(t) {
   return {hub, owner, page, sockets, launch};
 }
 
+test('registry identity is shared across pages and changes when a new hub reuses terminal IDs', async t => {
+  const first = setup(t), second = setup(t);
+  first.launch();
+  second.launch();
+  const registry = async page => until(() => page.frames('registry').find(message => message.entries.length));
+  const [original, otherPage, replacement] = await Promise.all([
+    registry(first.owner), registry(first.page()), registry(second.owner),
+  ]);
+  assert.equal(original.entries[0].id, replacement.entries[0].id);
+  assert.ok(original.worker);
+  assert.equal(original.worker, otherPage.worker);
+  assert.notEqual(original.worker, replacement.worker);
+});
+
 test('one PTY per launch, private launch fields, port and epoch fenced handoff and drag release', async t => {
   const {hub, owner, page, sockets, launch} = setup(t);
   const mirror = page();

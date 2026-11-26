@@ -299,6 +299,9 @@ html:has(.terminal-deck) { overscroll-behavior-x: none; }
 .launch-issues { color:#ffb69d; margin:0; padding-left:1.2rem; overflow-wrap:anywhere; }
 .cli-launch-context { display:grid; gap:.25rem; overflow-wrap:anywhere; }
 .cli-launch-context code { color:#b2c6be; }
+.cli-reference { min-width:0; }
+.cli-reference summary { cursor:pointer; }
+.cli-reference pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 
 .cli-group-star { color:#939c9c; line-height:1; }
 .cli-group-toggle[data-state=online] .cli-group-star { color:#48bc78; }

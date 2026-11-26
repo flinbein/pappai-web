@@ -34,7 +34,7 @@ export type TerminalRequest =
   | {type: 'terminal.remove'; ids: number[]};
 
 export type TerminalEvent =
-  | {type: 'terminal.registry'; entries: TerminalEntry[]; seq: number}
+  | {type: 'terminal.registry'; worker?: string; entries: TerminalEntry[]; seq: number}
   | {type: 'terminal.created'; id: number; requestId: string}
   | ({type: 'terminal.snapshot'; owner: boolean; data: string} & Frame & Size)
   | ({type: 'terminal.output'; data: Uint8Array} & Frame)

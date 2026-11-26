@@ -73,6 +73,13 @@ export function field(form: HTMLFormElement, name: string) {
   return String(new FormData(form).get(name) ?? '');
 }
 
+export function NoRestrictions({ onSelect }: { onSelect: () => void }) {
+  return <>
+    <button type="button" className="secondary" onClick={onSelect}>No restrictions</button>
+    <small>Removes this node’s own limits. Other nodes on its permission paths still apply their rules.</small>
+  </>;
+}
+
 export function NodeOptions({ nodes, type, placeholder }: { nodes: DirectoryNode[]; type: NodeType; placeholder: string }) {
   return <><option value="">{placeholder}</option>{nodes.filter(node => node.type === type).map(node =>
     <option key={node.id} value={node.id}>{node.name} · {node.id}</option>)}</>;

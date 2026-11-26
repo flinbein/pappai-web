@@ -157,7 +157,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
   const synchronize = useCallback(() => {
     void readDirectory().catch(error => { if (mounted.current) feedback(errorMessage(error)); });
   }, [readDirectory, feedback, mounted]);
-  usePappaiEvent({ events: ['$.node.created', '$.node.deleted', '$.node.permissions.updated', '$.app.statusChanged'] },
+  usePappaiEvent({ events: ['$.node.created', '$.permissions.changed', '$.effectivePermissions.invalidated', '$.lifecycle.statusChanged'] },
     synchronize, { onSubscribed: synchronize, onError: error => {
       feedback('Could not subscribe to node tree updates: ' + errorMessage(error));
       synchronize();
@@ -210,7 +210,7 @@ export function Workspace({ session, feedback, signOut }: { session: Session; fe
       </nav>
     </aside>
     {nodeRoute && (selectedNode
-      ? <NodePanel key={selectedNode.id} node={selectedNode} nodes={nodes} admin={session.canManageApps}
+      ? <NodePanel key={selectedNode.id} node={selectedNode} nodes={nodes}
           action={action} chooseAction={next => void navigate(nodePath(selectedNode.id) + (next ? '/' + next : ''))}
           refresh={refresh} reply={replies[selectedNode.id]} updateReply={reply =>
             setReplies(previous => ({ ...previous, [selectedNode.id]: reply }))} />

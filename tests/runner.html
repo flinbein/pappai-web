@@ -9,8 +9,9 @@
   const path = '/run/pappai/private/runners/demo/releases/one/runner.mjs';
   const newPath = path.replace('/one/', '/two/');
   const workspace = {id:'~', parentId:null, type:'workspace', name:'Workspace'};
-  const catalog = Object.fromEntries(['add','get','restart','disable'].map(name =>
+  const catalog = Object.fromEntries(['add','list','restart','disable'].map(name =>
     ['$.runners.' + name, {type:'method', version:'1', description:name}]));
+  catalog['$.runners'] = {type:'document',version:'2',description:'Manage runner installations'};
   let rejectFirst = true;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (url, options) => url === '/api/session'
@@ -37,7 +38,7 @@
       if (msg.method === 'discover') reply.result = [workspace];
       if (msg.method === 'help') reply.result = catalog;
       if (msg.method === 'call') {
-        if (msg.params.method === '$.runners.get') reply.result = entries;
+        if (msg.params.method === '$.runners.list') reply.result = entries;
         else {
           const {method,data} = msg.params;
           calls.push({method,data});
@@ -83,6 +84,7 @@
   try {
     history.replaceState(null, '', '/');
     await import('../src/panel/main.tsx');
+    await click('[aria-label="Expand $.runners"]');
     await click(link('add'));
     await awaitEl('#runner-source-npm');
     assert(el('.action-column #runner-installer') && !el('#nav-runners'), 'installer placement');

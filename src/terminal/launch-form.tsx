@@ -61,9 +61,7 @@ export function LaunchForm({action, visible, theme, chooseTheme, defaultSandbox,
     if (issues.length) return;
     start(action ? {cli:{node:action.node, method:action.method, input}} : {argv:words, env:variables}, !action && canChooseSandbox && sandbox);
   }}>
-    {action && <header className="cli-launch-context"><strong>{action.method}</strong><code>{action.node}</code>
-      {action.description && <p>{action.description}</p>}
-      {action.doc && <details><summary>Method help</summary><p>{action.doc}</p></details>}</header>}
+    {action && <header className="cli-launch-context"><strong>{action.method}</strong><code>{action.node}</code></header>}
     {showArgs && <fieldset className="launch-fields" aria-invalid={invalid('#/args')}>
       <legend>{label}</legend>
       {!structured && <textarea id="terminal-command" name="command" aria-label={label} rows={1} value={command}

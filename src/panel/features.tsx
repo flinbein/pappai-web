@@ -1,38 +1,63 @@
-import { useState } from 'react';
-import { call, formatJSON, parseJSON } from './api';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { call, formatJSON, parseJSON, supports } from './api';
 import type { Catalog, Feature } from './api';
-import { field, Form, Submit, useMounted } from './controls';
+import { field, Form, NoRestrictions, Submit, useMounted } from './controls';
 import { NodeActionLink } from './node-action-link';
 import type { NodeNavigation } from './node-action-link';
 import type { Refresh } from './workspace';
 
-const headings = ['Application methods', 'System methods', 'Events', 'Articles'];
-
-function featureGroup(name: string, feature: Feature) {
-  if (feature.type === 'method' || feature.type === 'cli') return name.startsWith('$.') ? 1 : 0;
-  return feature.type === 'event' ? 2 : 3;
-}
-
-function featureGroups(catalog: Catalog) {
-  const groups = headings.map(() => [] as string[]);
-  for (const [name, feature] of Object.entries(catalog).sort(([a], [b]) => a.localeCompare(b))) {
-    groups[featureGroup(name, feature)]!.push(name);
+function ancestorNames(name: string) {
+  const parents: string[] = [];
+  while (name.includes('.')) {
+    name = name.slice(0, name.lastIndexOf('.'));
+    parents.push(name);
   }
-  return groups;
+  return parents;
 }
+
+const typeIcons: Record<Feature['type'], string> = { document: '▤', method: 'ƒ', event: '↯', cli: '>_' };
 
 export function FeatureLinks({ catalog, ...navigation }: NodeNavigation & { catalog: Catalog }) {
-  return <section id="feature-panel"><h2>Methods and help</h2>
-    {Object.keys(catalog).length === 0 && <p>No methods, events, or articles are available.</p>}
-    {featureGroups(catalog).map((group, index) => group.length > 0 &&
-      <details key={index} open={index === 0 || group.some(name => navigation.action === 'methods/' + encodeURIComponent(name))}>
-        <summary>{headings[index]} ({group.length})</summary>
-        <ul className="action-list">{group.map(name =>
-          <li key={name}><NodeActionLink {...navigation} path={'methods/' + encodeURIComponent(name)}>
-            <code>{name}</code>
-          </NodeActionLink></li>)}</ul>
-      </details>)}
-  </section>;
+  const branches = useMemo(() => {
+    const tree = new Map<string, string[]>();
+    for (const name of Object.keys(catalog).sort()) {
+      const parent = ancestorNames(name).find(prefix => Object.hasOwn(catalog, prefix)) ?? '';
+      if (!tree.has(parent)) tree.set(parent, []);
+      tree.get(parent)!.push(name);
+    }
+    return tree;
+  }, [catalog]);
+  const [expanded, setExpanded] = useState(new Set<string>());
+  useEffect(() => {
+    const name = Object.keys(catalog).find(key => navigation.action === 'methods/' + encodeURIComponent(key));
+    if (name) setExpanded(previous => new Set([...previous, ...ancestorNames(name)]));
+  }, [navigation.action, catalog]);
+
+  function rows(parent: string): ReactNode {
+    return <ul>{branches.get(parent)?.map(name => {
+      const feature = catalog[name];
+      const open = expanded.has(name);
+      return <li key={name}>
+        <div className="feature-row">
+          {branches.has(name) && <button type="button" className="disclosure" aria-expanded={open}
+            aria-label={(open ? 'Collapse ' : 'Expand ') + name} onClick={() => setExpanded(previous => {
+              const next = new Set(previous);
+              if (!next.delete(name)) next.add(name);
+              return next;
+            })}>{open ? '▾' : '▸'}</button>}
+          <NodeActionLink {...navigation} path={'methods/' + encodeURIComponent(name)}>
+            <span className="feature-type" role="img" aria-label={feature.type} title={feature.type}>{typeIcons[feature.type]}</span>
+            <code title={name}>{parent ? name.slice(parent.length + 1) : name}</code>
+            <span className="feature-summary">{feature.description}</span>
+          </NodeActionLink>
+        </div>
+        {open && branches.has(name) && rows(name)}
+      </li>;
+    })}</ul>;
+  }
+  return <nav id="feature-panel" aria-labelledby="feature-title"><h2 id="feature-title">Documentation</h2>
+    {branches.size ? rows('') : <p>No features available.</p>}
+  </nav>;
 }
 
 interface MethodProps {
@@ -42,24 +67,30 @@ interface MethodProps {
   feature: Feature;
   chooseFeature: (name: string) => void;
   refresh: Refresh;
+  children?: ReactNode;
 }
 
-export function Method({ id, name, catalog, feature, chooseFeature, refresh }: MethodProps) {
+export function FeatureReference({ feature }: { feature: Feature }) {
+  return <>
+    <p id="feature-description">{feature.type} · v{feature.version} · {feature.description}</p>
+    <pre id="feature-doc">{feature.doc}</pre>
+    {feature.schema !== undefined && <details id="schema-block">
+      <summary>JSON schema</summary><pre id="feature-schema">{formatJSON(feature.schema)}</pre>
+    </details>}
+  </>;
+}
+
+export function Method({ id, name, catalog, feature, chooseFeature, refresh, children }: MethodProps) {
   const [result, setResult] = useState('');
+  const [draft, setDraft] = useState(name === 'agent.execute' ? '{ "input": "" }' : '{}');
   const mounted = useMounted();
   return <>
-    <h2>{feature.type === 'method' ? 'Method call' : 'Help'}</h2>
-    <label>Methods, events, and articles<select id="feature" value={name} onChange={event => chooseFeature(event.target.value)}>
-      {featureGroups(catalog).map((group, index) => group.length > 0 && <optgroup key={index} label={headings[index]}>
-        {group.map(value => <option key={value}>{value}</option>)}
-      </optgroup>)}
+    <h2>{name}</h2>
+    <label>Feature<select id="feature" value={name} onChange={event => chooseFeature(event.target.value)}>
+      {Object.keys(catalog).sort().map(value => <option key={value}>{value}</option>)}
     </select></label>
-    <p id="feature-description">v{feature.version} · {feature.description}</p>
-    <pre id="feature-doc">{feature.doc}</pre>
-    <details id="schema-block" hidden={feature.schema === undefined}>
-      <summary>JSON schema</summary><pre id="feature-schema">{formatJSON(feature.schema)}</pre>
-    </details>
-    {feature.type === 'method' && <Form id="method-call" feedback={setResult} submit={async form => {
+    <FeatureReference feature={feature} />
+    {children ?? (feature.type === 'method' && <Form id="method-call" feedback={setResult} submit={async form => {
       const data = parseJSON(field(form, 'arguments'));
       setResult('Running…');
       const value = await call(id, name, data, feature.version);
@@ -67,9 +98,11 @@ export function Method({ id, name, catalog, feature, chooseFeature, refresh }: M
       if (mounted.current && name.startsWith('$.')) await refresh();
     }}>
       <label>Method arguments (JSON)<textarea id="arguments" name="arguments" rows={5} spellCheck={false} required
-        defaultValue={name === 'agent.execute' ? '{ "input": "" }' : '{}'} /></label>
+        value={draft} onChange={event => setDraft(event.target.value)} /></label>
+      {name === '$.permissions.set' && supports(catalog, '$.permissions') &&
+        <NoRestrictions onSelect={() => setDraft(formatJSON({ permissions: null }))} />}
       <Submit>Call method</Submit>
-    </Form>}
+    </Form>)}
     <pre id="method-result" role="status">{result}</pre>
   </>;
 }

@@ -15,9 +15,19 @@ export interface Feature {
   version: string;
   description: string;
   doc?: string;
-  schema?: {input?: unknown; output?: unknown};
+  schema?: {input?: unknown; output?: unknown; data?: unknown};
 }
 export type Catalog = Record<string, Feature>;
+// Specialized controls implement these versions of the controller's service documents.
+const panelInterfaces = {
+  '$.app': '2', '$.profile': '2', '$.runners': '2',
+  '$.children': '1', '$.lifecycle': '1', '$.permissions': '1',
+} as const;
+
+export function supports(catalog: Catalog | undefined, service: keyof typeof panelInterfaces) {
+  const feature = catalog?.[service];
+  return feature?.type === 'document' && feature.version === panelInterfaces[service];
+}
 export interface Runner {
   name: string;
   available: boolean;
@@ -112,10 +122,6 @@ export function call<T = unknown>(node: string, method: string, data: unknown = 
 
 export function getCatalog(node: string) {
   return rpc<Catalog>('help', { node, features: true, doc: true, schema: true });
-}
-
-export function getRunners() {
-  return call<Runner[]>('~', '$.runners.get');
 }
 
 export async function getSession(): Promise<Session> {

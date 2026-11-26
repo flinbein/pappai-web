@@ -8,7 +8,6 @@ import { snapshotReader } from './refresh-snapshot';
 import { usePappaiEvent } from './use-pappai-event';
 
 interface AppState {
-  status: Status;
   lastIssue: string | null;
   manifestChanged: boolean;
 }
@@ -20,12 +19,13 @@ interface Pool {
 }
 interface Props {
   id: string;
-  onStatus: (status: Status) => void;
+  status?: Status;
+  changeLifecycle?: (command: 'start' | 'stop') => Promise<void>;
   onCatalog: (catalog: Catalog) => void;
   feedback: Feedback;
   refresh: Refresh;
 }
-export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Props) {
+export function AppManagement({ id, status, changeLifecycle, onCatalog, feedback, refresh }: Props) {
   const [state, setState] = useState<AppState>();
   const [pool, setPool] = useState<Pool>();
   const [manifest, setManifest] = useState<string>();
@@ -40,13 +40,12 @@ export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Pr
       if (!mounted.current) return;
       setState(appState);
       setPool(executors);
-      onStatus(appState.status);
     },
-  ), [id, mounted, onStatus]);
+  ), [id, mounted]);
   const synchronize = useCallback(() => {
     void readState().catch(error => { if (mounted.current) feedback(errorMessage(error)); });
   }, [readState, mounted, feedback]);
-  usePappaiEvent({ node: id, events: ['$.app.statusChanged', '$.app.restarted', '$.node.lastIssueUpdated'] },
+  usePappaiEvent({ node: id, events: ['$.lifecycle.statusChanged', '$.app.restarted', '$.app.lastIssueChanged'] },
     synchronize, { onSubscribed: synchronize, onError: error => {
       feedback('Could not subscribe to APP updates: ' + errorMessage(error));
       synchronize();
@@ -57,8 +56,8 @@ export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Pr
       .catch(error => { if (mounted.current) feedback(errorMessage(error)); });
   }, [id, feedback, mounted]);
 
-  async function manage(command: 'start' | 'stop' | 'restart') {
-    await call(id, '$.app.' + command);
+  async function restart() {
+    await call(id, '$.app.restart');
     if (mounted.current) await Promise.all([readState(), refresh()]);
   }
 
@@ -79,15 +78,17 @@ export function AppManagement({ id, onStatus, onCatalog, feedback, refresh }: Pr
 
   return <section id="app-management"><h2>APP status</h2>
     <dl className="app-state">
-      <div><dt>Status</dt><dd id="app-status">{state && statusLabel[state.status]}</dd></div>
+      <div><dt>Status</dt><dd id="app-status">{status && statusLabel[status]}</dd></div>
       <div><dt>Slots in use</dt><dd id="app-active">{pool && (pool.limit === null ? pool.active : pool.active + ' / ' + pool.limit)}</dd></div>
       <div><dt>Queued</dt><dd id="app-queued">{pool?.queued}</dd></div>
     </dl>
     <p id="app-issue" hidden={!state?.lastIssue}>{state?.lastIssue}</p>
     <div className="app-actions">
-      <Action id="app-start" disabled={state?.status !== 'stopped' && state?.status !== 'error'} feedback={feedback} run={() => manage('start')}>Start</Action>
-      <Action id="app-stop" className="secondary" disabled={state?.status !== 'working' && state?.status !== 'error'} feedback={feedback} run={() => manage('stop')}>Stop</Action>
-      <Action id="app-restart" className="secondary" disabled={state?.status !== 'working' || pool?.restarting} feedback={feedback} run={() => manage('restart')}>Restart</Action>
+      {changeLifecycle && <>
+        <Action id="app-start" disabled={status === 'working' || status === 'stopping'} feedback={feedback} run={() => changeLifecycle('start')}>Start</Action>
+        <Action id="app-stop" className="secondary" disabled={status === 'stopped' || status === 'stopping'} feedback={feedback} run={() => changeLifecycle('stop')}>Stop</Action>
+      </>}
+      <Action id="app-restart" className="secondary" disabled={status !== 'working' || pool?.restarting} feedback={feedback} run={restart}>Restart</Action>
       <Action id="app-refresh" className="secondary" feedback={feedback} run={readState}>Refresh status</Action>
     </div>
     <details id="manifest-details"><summary>APP manifest</summary>

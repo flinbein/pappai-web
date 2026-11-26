@@ -56,18 +56,18 @@ export default function RunnerInstaller({node, catalog, changed}: InstallerProps
   const [message, setMessage] = useState('');
   const existing = runners.find(runner => runner.name === selected);
   const method = selected ? '$.runners.restart' : '$.runners.add';
-  const get = catalog['$.runners.get'];
+  const list = catalog['$.runners.list'];
   const getVersion = job && 'runners.' + job.name + '.getVersion';
-  const canUpdate = get?.type === 'method' && catalog['$.runners.restart']?.type === 'method';
+  const canUpdate = list?.type === 'method' && catalog['$.runners.restart']?.type === 'method';
   useEffect(() => {
-    if (get?.type !== 'method') return;
+    if (list?.type !== 'method') return;
     let active = true;
     setListError('');
-    void call<Runner[]>(node, '$.runners.get', {}, get.version).then(value => {
+    void call<Runner[]>(node, '$.runners.list', {}, list.version).then(value => {
       if (active) setRunners(value);
     }).catch(error => { if (active) setListError(errorMessage(error)); });
     return () => { active = false; };
-  }, [node, get, revision]);
+  }, [node, list, revision]);
 
   function chooseRunner(name: string) {
     const runner = runners.find(r => r.name === name);

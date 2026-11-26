@@ -1,10 +1,13 @@
-import { useContext, useEffect, useState } from 'react';
-import { call, errorMessage, formatJSON, getCatalog, getRunners, statusLabel } from './api';
-import type { Catalog, DirectoryNode } from './api';
-import { Form, Submit } from './controls';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
+import { call, errorMessage, formatJSON, getCatalog, statusLabel, supports } from './api';
+import type { Catalog, DirectoryNode, Status } from './api';
+import { Action, Form, Submit, useMounted } from './controls';
+import { snapshotReader } from './refresh-snapshot';
+import { usePappaiEvent } from './use-pappai-event';
 import { AppManagement } from './app-management';
 import { canCreate, choices, CreateNode } from './create-node';
-import { FeatureLinks, Method } from './features';
+import { FeatureLinks, FeatureReference, Method } from './features';
 import { NodeActionLink } from './node-action-link';
 import { TerminalSlot } from './terminal-slot';
 import { Profile } from './profile';
@@ -41,7 +44,6 @@ function Chat({ id, version, reply, updateReply }: ChatProps) {
 interface Props {
   node: DirectoryNode;
   nodes: DirectoryNode[];
-  admin: boolean;
   action: string;
   chooseAction: (path: string) => void;
   refresh: Refresh;
@@ -57,37 +59,46 @@ function decodeAction(action: string) {
   }
 }
 
-export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, reply, updateReply }: Props) {
+export function NodePanel({ node, nodes, action, chooseAction, refresh, reply, updateReply }: Props) {
   const [status, setStatus] = useState(node.status);
   const [catalog, setCatalog] = useState<Catalog>();
-  const [availableRunner, setAvailableRunner] = useState(false);
   const [error, setError] = useState('');
   const { id, type } = node;
   const runnerRevision = useContext(RunnerCatalogRevision);
   const workspaceRevision = type === 'workspace' ? runnerRevision : 0;
+  const mounted = useMounted();
 
   useEffect(() => { setStatus(node.status); }, [node.status]);
   useEffect(() => {
     let current = true;
-    async function load() {
-      const result = await getCatalog(id);
-      if (!current) return;
-      setCatalog(result);
-      // The runner may accept profile setup before its method advertisement arrives.
-      if (type === 'profile' && admin && result['codex.setup']?.type !== 'method') {
-        const runners = await getRunners();
-        if (current) setAvailableRunner(runners.some(r => r.name === 'codex' && r.available));
-      }
-    }
-    void load().catch(reason => { if (current) setError(errorMessage(reason)); });
+    void getCatalog(id).then(result => { if (current) setCatalog(result); })
+      .catch(reason => { if (current) setError(errorMessage(reason)); });
     return () => { current = false; };
-  }, [id, type, admin, workspaceRevision]);
+  }, [id, workspaceRevision]);
 
-  const hasChildren = type === 'workspace' || type === 'team';
-  const createChoices = hasChildren && catalog ? choices.filter(([kind]) => canCreate(kind, catalog, admin)) : [];
-  const manageApp = admin && type === 'app';
+  const hasChildren = supports(catalog, '$.children');
+  const createChoices = catalog ? choices.filter(([kind]) => canCreate(kind, catalog)) : [];
+  const lifecycle = supports(catalog, '$.lifecycle');
+  const manageApp = supports(catalog, '$.app');
+  const manageProfile = supports(catalog, '$.profile');
+  const manageRunners = supports(catalog, '$.runners') && catalog?.['$.runners.add']?.type === 'method';
+  const readStatus = useMemo(() => snapshotReader(
+    () => call<{status: Status}>(id, '$.lifecycle.get'),
+    result => { if (mounted.current) setStatus(result.status); },
+  ), [id, mounted]);
+  function synchronizeStatus() {
+    void readStatus().catch(reason => { if (mounted.current) setError(errorMessage(reason)); });
+  }
+  usePappaiEvent({ node: id, events: '$.lifecycle.statusChanged' }, synchronizeStatus,
+    { disabled: !lifecycle, onSubscribed: synchronizeStatus, onError: synchronizeStatus });
+  async function changeLifecycle(command: 'start' | 'stop') {
+    await call(id, '$.lifecycle.' + command);
+    if (mounted.current) await Promise.all([readStatus(), refresh()]);
+  }
+  const lifecycleProps = { status, changeLifecycle: lifecycle ? changeLifecycle : undefined };
   const execute = type === 'app' ? catalog?.['agent.execute'] : undefined;
-  const chat = execute?.type === 'method';
+  const chat = execute?.type === 'method' && execute.version === '1';
+  const cliShortcuts = type === 'profile' ? Object.entries(catalog ?? {}).filter(([, feature]) => feature.type === 'cli') : [];
   const segments = decodeAction(action);
   const [section, name] = segments;
   const navigation = { nodeId: id, action: segments.map(encodeURIComponent).join('/'), chooseAction };
@@ -95,30 +106,34 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
   const contract = catalog && name && Object.hasOwn(catalog, name) ? catalog[name] : undefined;
 
   function renderAction() {
+    if (!catalog) return error ? null : <p role="status">Loading actions…</p>;
     if (segments.length === 1) {
       if (section === 'manage' && manageApp) {
-        return <AppManagement id={id} refresh={refresh} feedback={setError} onStatus={setStatus} onCatalog={setCatalog} />;
+        return <AppManagement id={id} refresh={refresh} feedback={setError} {...lifecycleProps} onCatalog={setCatalog} />;
       }
-      if (section === 'profile' && type === 'profile') {
-        return <Profile id={id} nodes={nodes} onStatus={setStatus} feedback={setError}
-          canImport={catalog?.['codex.setup']?.type === 'method' || availableRunner} />;
+      if (section === 'profile' && manageProfile) {
+        return <Profile id={id} nodes={nodes} {...lifecycleProps} feedback={setError}
+          canImport={catalog['codex.setup']?.type === 'method' && catalog['codex.setup'].version === '1'} />;
       }
       if (section === 'chat' && chat) {
         return <Chat id={id} version={execute.version} reply={reply} updateReply={updateReply} />;
       }
     }
-    if (!catalog) return error ? null : <p role="status">Loading actions…</p>;
     if (segments.length === 2) {
       if (section === 'methods' && name && contract) {
-        if (contract.type === 'cli') return <TerminalSlot node={id} method={name} schema={contract.schema?.input} description={contract.description} doc={contract.doc}/>;
-        if (type === 'workspace' && name === '$.runners.add' && contract.type === 'method') {
-          return <RunnerInstallerSlot node={id} catalog={catalog} />;
-        }
+        if (contract.type === 'cli') return <>
+          <details key={name} className="cli-reference" open><summary>{name} documentation</summary>
+            <FeatureReference feature={contract} />
+          </details>
+          <TerminalSlot node={id} method={name} schema={contract.schema?.input} />
+        </>;
         return <Method key={name} id={id} name={name} feature={contract} catalog={catalog} refresh={refresh}
-          chooseFeature={feature => chooseAction('methods/' + encodeURIComponent(feature))} />;
+          chooseFeature={feature => chooseAction('methods/' + encodeURIComponent(feature))}>
+          {manageRunners && name === '$.runners.add' ? <RunnerInstallerSlot node={id} catalog={catalog} /> : undefined}
+        </Method>;
       }
       if (section === 'create' && kind) {
-        return <CreateNode parent={node} nodes={nodes} admin={admin} catalog={catalog} type={kind}
+        return <CreateNode parent={node} nodes={nodes} catalog={catalog} type={kind}
           chooseType={value => chooseAction('create/' + value)} close={() => chooseAction('')} refresh={refresh} />;
       }
     }
@@ -135,13 +150,21 @@ export function NodePanel({ node, nodes, admin, action, chooseAction, refresh, r
       {hasChildren && <section id="children"><h2>Child nodes</h2>
         <p id="child-count">Visible child nodes: {nodes.filter(n => n.parentId === id).length}</p>
       </section>}
-      {(createChoices.length > 0 || chat || manageApp || type === 'profile') && <section id="actions">
+      {lifecycle && <section aria-label="Lifecycle"><h2>Lifecycle</h2><div className="app-actions">
+        <Action id="lifecycle-start" disabled={status === 'working' || status === 'stopping'}
+          feedback={setError} run={() => changeLifecycle('start')}>Start</Action>
+        <Action id="lifecycle-stop" className="secondary" disabled={status === 'stopped' || status === 'stopping'}
+          feedback={setError} run={() => changeLifecycle('stop')}>Stop</Action>
+      </div></section>}
+      {(createChoices.length > 0 || chat || manageApp || manageProfile || manageRunners || cliShortcuts.length > 0) && <section id="actions">
         <h2>Actions</h2>
         <ul className="action-list">
           {chat && <li><NodeActionLink {...navigation} id="show-chat" path="chat">Message agent</NodeActionLink></li>}
           {manageApp && <li><NodeActionLink {...navigation} id="show-management" path="manage">Manage APP</NodeActionLink></li>}
-          {type === 'profile' && <li><NodeActionLink {...navigation} id="show-profile" path="profile">Profile settings</NodeActionLink></li>}
-          {type === 'profile' && Object.entries(catalog ?? {}).filter(([, feature]) => feature.type === 'cli').map(([method]) =>
+          {manageProfile && <li><NodeActionLink {...navigation} id="show-profile" path="profile">Profile settings</NodeActionLink></li>}
+          {manageRunners && <li><Link className="action-link" id="show-runners"
+            to={'/nodes/' + encodeURIComponent(id) + '/methods/%24.runners.add'}>Manage runners</Link></li>}
+          {cliShortcuts.map(([method]) =>
             <li key={method}><NodeActionLink {...navigation} cliMethod={method} path={'methods/' + encodeURIComponent(method)}>{method}</NodeActionLink></li>)}
           {createChoices.map(([value, label], index) => <li key={value}>
             <NodeActionLink {...navigation} id={index === 0 ? 'new-node' : undefined} path={'create/' + value}>Create {label}</NodeActionLink>

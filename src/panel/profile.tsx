@@ -8,30 +8,24 @@ interface Props {
   id: string;
   nodes: DirectoryNode[];
   canImport: boolean;
-  onStatus: (status: Status) => void;
+  status?: Status;
+  changeLifecycle?: (command: 'start' | 'stop') => Promise<void>;
   feedback: Feedback;
 }
-export function Profile({ id, nodes, canImport, onStatus, feedback }: Props) {
-  const [status, setStatus] = useState<Status>();
-  const [scope, setScope] = useState('');
+export function Profile({ id, nodes, canImport, status, changeLifecycle, feedback }: Props) {
+  const [scope, setScope] = useState<string>();
   const [app, setApp] = useState('');
   const [result, setResult] = useState('');
   const mounted = useMounted();
   const readProfile = useCallback(async () => {
-    const profile = await call<{ status: Status; scope: unknown }>(id, '$.profile.get');
+    const profile = await call<{ scope: unknown }>(id, '$.profile.scope.get');
     if (!mounted.current) return;
-    onStatus(profile.status);
     setScope(formatJSON(profile.scope));
-    setStatus(profile.status);
-  }, [id, mounted, onStatus]);
+  }, [id, mounted]);
 
   useEffect(() => {
     void readProfile().catch(error => { if (mounted.current) feedback(errorMessage(error)); });
   }, [readProfile, mounted, feedback]);
-  async function manage(command: 'enable' | 'disable') {
-    await call(id, '$.profile.' + command);
-    if (mounted.current) await readProfile();
-  }
 
   return <section id="profile-controls"><h2>Profile settings</h2>
     <Form id="profile-import" hidden={!canImport} feedback={setResult} submit={async form => {
@@ -42,7 +36,7 @@ export function Profile({ id, nodes, canImport, onStatus, feedback }: Props) {
       <Submit>Import Codex credentials</Submit>
     </Form>
     <Form id="profile-scope" feedback={setResult} submit={async () => {
-      const value = parseJSON(scope);
+      const value = parseJSON(scope ?? '');
       if (!Array.isArray(value)) throw new Error('The access scope must be a JSON array.');
       if (app && !value.includes(app)) value.push(app);
       await call(id, '$.profile.scope.set', { scope: value });
@@ -51,16 +45,16 @@ export function Profile({ id, nodes, canImport, onStatus, feedback }: Props) {
       setResult('Access scope saved.');
     }}>
       <label>Access scope (JSON)<textarea id="scope" rows={3} required spellCheck={false}
-        disabled={!status} value={scope} onChange={event => setScope(event.target.value)} /></label>
+        disabled={scope === undefined} value={scope ?? ''} onChange={event => setScope(event.target.value)} /></label>
       <label>Append an APP to the access scope<select id="scope-app" value={app} onChange={event => setApp(event.target.value)}>
         <NodeOptions nodes={nodes} type="app" placeholder="None" />
       </select></label>
-      <Submit disabled={!status}>Save access scope</Submit>
+      <Submit disabled={scope === undefined}>Save access scope</Submit>
     </Form>
-    <div className="app-actions">
-      <Action id="enable-profile" feedback={setResult} disabled={!status || status === 'working'} run={() => manage('enable')}>Enable profile</Action>
-      <Action id="disable-profile" className="secondary" feedback={setResult} disabled={status !== 'working'} run={() => manage('disable')}>Disable profile</Action>
-    </div>
+    {changeLifecycle && <div className="app-actions">
+      <Action id="enable-profile" feedback={setResult} disabled={status === 'working'} run={() => changeLifecycle('start')}>Enable profile</Action>
+      <Action id="disable-profile" className="secondary" feedback={setResult} disabled={status === 'stopped'} run={() => changeLifecycle('stop')}>Disable profile</Action>
+    </div>}
     <p id="profile-result" role="status">{result}</p>
   </section>;
 }

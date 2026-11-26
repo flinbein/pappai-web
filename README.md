@@ -1,20 +1,24 @@
 # pappai-web
 
-The workspace panel and interactive terminal for [pappai](https://github.com/flinbein/pappai). The panel uses WebAuthn, the controller's session and JSON RPC. React Router opens a node summary at `/nodes/:id` and its method form at `/nodes/:id/methods/:name`. On a phone, the breadcrumbs switch visible columns in place, preserving the URL, form and result. Files open in the controller's file browser.
+The workspace panel and interactive terminal for [pappai](https://github.com/flinbein/pappai). Select a node to see its ID and documentation at `/nodes/:id`. Each entry shows its feature type and description. Use the arrow to expand its children, or select its name to open the manual at `/nodes/:id/methods/:name`. Method pages include a call form and CLI pages include a terminal. On a phone, the breadcrumbs switch visible columns in place, preserving the URL, form and result. Files open in the controller's file browser.
+
+The second column also offers controls for the system interfaces advertised by this node. For example, a supported `$.lifecycle` version supplies Start and Stop, and `$.children` supplies creation forms. The controller checks each call against the current permissions. A service with an unfamiliar version can still be explored through its documentation and generic method forms.
 
 Open `/terminal` and use **+** to launch a command (default `/bin/sh -i`). Enter the command and its arguments on one line, or choose **Edit as rows** to enter each word separately. Single and double quotes group words, backslash escapes characters, and empty quoted words represent empty arguments. **Environment** accepts a name and value per row. Each terminal tab owns one WebSocket and PTY. Tabs show the program title. Hover over the status icon for the launch state or exit code. A startup error appears in the tab in place of the terminal. Navigating between tabs and workspace panes preserves running programs and scrollback. A program that exits leaves its output available until its terminal tab is removed. Browser windows in the same login session share one panel connection and a terminal catalog through a SharedWorker. Other windows display a scaled, diagonally shaded preview. Selecting a terminal by tab, horizontal scroll or two-finger swipe takes control of that terminal. Returning to a window takes control of its displayed terminal after a short pause. Clicking another tab or **+** as you return leaves the previous terminal with its current owner. If the diagonally shaded preview is still visible, the first key or click activates it and is consumed. The next input reaches the program. Closing one window keeps terminals running in the others. Signing out ends the shared sessions.
 
 Choose a terminal theme when launching a tab or change it live with the palette button. Swipe between tabs and the launch form with two fingers. Use Ctrl+Shift+C to copy a selection or open a selectable scrollback snapshot. The package includes 12 local palettes and their [source notices](public/terminal-theme-notices.txt).
 
+For a new TEAM, **Node permissions** previews the default rules for managing descendants and creating immediate children. Leave **Team folder** empty to use the controller's default. Enter a folder to include a file write rule, or choose **Custom rules** to edit the JSON. An explicit `[]` gives the TEAM an empty rule list. **No restrictions** sets local rules to `null` and is also available in the permissions setter for an existing node. Review the JSON and submit the form to apply it. An APP needs an unrestricted permission path to the workspace to act as an administrator.
+
 ## CLI methods
 
-Open a PROFILE and select an advertised CLI method in **Actions**. The launch form shows the target node and method. Enter arguments, set environment variables and choose a theme. The browser checks the method’s JSON Schema and marks invalid fields before opening a terminal. A method that accepts no arguments or environment needs only a theme and **Run**.
+Select an advertised CLI in **Documentation**, or use a PROFILE shortcut in **Actions**. Its version, manual and input schema appear above the terminal and remain accessible during a session. The launch form shows the target node and method. Enter arguments, set environment variables and choose a theme. The browser checks the method’s JSON Schema and marks invalid fields before opening a terminal. A method that accepts no arguments or environment needs only a theme and **Run**.
 
 The method page shows its own sessions and a **+** tab for another launch. The global **Terminal** tool groups these sessions by node and method alongside ordinary shell tabs. Open a group to switch between its sessions. The star is green while a session is running, yellow while starting, red after a failure, and gray when all sessions closed successfully or disconnected. The group label shows the method followed by the node name. Its color follows the open group's tabs. Select the label to collapse the group. Collapsing the selected terminal’s group selects **+**. Swiping skips collapsed groups. Groups slide open and closed. Closing a tab slides the remaining tabs into place. Both transitions respect the system’s reduced motion setting. The global **+** always opens a shell launch form. Closing a starting or running terminal, or a group containing one, asks for confirmation.
 
 ## Runner installation
 
-Select the workspace node, expand **System methods**, and open `$.runners.add`. Choose an npm package specification or a Git repository with an optional ref. The installation name is editable. For an existing executable, choose **Custom path** and enter its absolute entrypoint under `/run/pappai/private/runners/<name>/`. The directory supplies the name.
+Select **Manage runners** on the workspace node, or expand `$.runners` and open `add` in its documentation tree. Choose an npm package specification or a Git repository with an optional ref. The installation name is editable. For an existing executable, choose **Custom path** and enter its absolute entrypoint under `/run/pappai/private/runners/<name>/`. The directory supplies the name.
 
 The embedded terminal streams preparation output. You can navigate within the workspace and reopen the method to see progress. A successful preparation registers the reported entrypoint. If registration fails, **Retry registration** reuses that entrypoint. Reloading the browser or signing out closes the terminal.
 
@@ -32,7 +36,7 @@ The signed-in panel uses one `/api/ws/web` connection for RPC and event subscrip
 
 ```tsx
 usePappaiEvent(
-  { node: appId, events: '$.app.statusChanged' },
+  { node: appId, events: '$.lifecycle.statusChanged' },
   event => updateStatus(event.data),
   { disabled: !appId, onSubscribed: reloadStatus },
 );

@@ -21,6 +21,7 @@ for (const [fixture, title, reducedMotion] of [
   ['cli', 'CLI and shell terminals share sessions across routes, validate launch inputs and close groups'],
   ['cli', 'Terminal groups and tabs close immediately with reduced motion', true],
   ['runner', 'Workspace runner preparation survives navigation and retries registration without reinstalling'],
+  ['catalog', 'Feature tree, mobile navigation, interface versions and TEAM permission modes'],
 ]) test(title, {
   skip: chrome ? false : 'Set PAPPAI_CHROME_BIN to run this Chromium test',
 }, async t => {
@@ -48,6 +49,7 @@ for (const [fixture, title, reducedMotion] of [
     '--no-default-browser-check', '--user-data-dir=' + join(temp, 'chrome'),
     ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
     ...(reducedMotion ? ['--force-prefers-reduced-motion=reduce'] : []),
+    ...(fixture === 'catalog' ? ['--window-size=390,760'] : []),
     '--dump-dom', 'http://127.0.0.1:' + port + '/tests/' + fixture + '.html' + (reducedMotion ? '?reduced' : ''),
   ], { windowsHide: true, timeout: 45000 });
   assert.equal(stdout.match(/<output>([\s\S]*?)<\/output>/)?.[1], 'pass');

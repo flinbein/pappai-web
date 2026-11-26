@@ -1,0 +1,133 @@
+<!doctype html>
+<div id="root"></div><output></output><img hidden src="/test-pending" alt="">
+<script type="module">
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (url, options) => url === '/api/session'
+    ? Promise.resolve(Response.json({user:'user',canManageApps:false,canChooseSandbox:false})) : nativeFetch(url, options);
+  const nodes = [
+    {id:'~',parentId:null,type:'workspace',name:'Workspace'},
+    {id:'team',parentId:'~',type:'team',name:'Team'},
+    {id:'user',parentId:'team',type:'user',name:'User',status:'stopped'},
+    {id:'future',parentId:'~',type:'user',name:'Future'},
+  ];
+  const feature = (type, description, version = '1') => ({type,version,description,doc:description + ' manual'});
+  const lifecycle = {
+    '$.lifecycle': feature('document','Control status'),
+    '$.lifecycle.get': feature('method','Read status'),
+    '$.lifecycle.start': feature('method','Start node'),
+    '$.lifecycle.stop': feature('method','Stop node'),
+    '$.lifecycle.statusChanged': feature('event','Status changed'),
+  };
+  const children = {
+    '$.children': feature('document','Create nodes'),
+    '$.children.createTeam': feature('method','Create a team'),
+    '$.children.createUser': feature('method','Create a user'),
+  };
+  const catalogs = {
+    '~': {}, team: children, future: {...lifecycle,'$.lifecycle':feature('document','Future lifecycle','100')},
+    user: {...lifecycle, guide:feature('document','Guide'), 'guide.run':feature('method','Run query'),
+      'guide.run.example':feature('document','Example request'), 'guide.changed':feature('event','Publication'),
+      'guide.shell':{...feature('cli','Launch shell'),schema:{input:{type:'object',additionalProperties:false}}}},
+  };
+  const calls = [];
+  class Socket {
+    static OPEN = 1;
+    readyState = 0;
+    constructor() {queueMicrotask(() => { this.readyState = 1; this.onopen?.(); });}
+    send(raw) {
+      const {id,method,params} = JSON.parse(raw);
+      let result = {};
+      if (method === 'discover') result = nodes;
+      if (method === 'help') result = catalogs[params.node] ?? {};
+      if (method === 'call') {
+        calls.push(params);
+        if (params.method === '$.lifecycle.get') result = {status:nodes[2].status};
+        if (params.method === '$.lifecycle.start') nodes[2].status = 'working';
+        if (params.method === '$.children.createTeam') {
+          result = {id:'created' + calls.length};
+          nodes.push({...result,parentId:params.node,type:'team',name:params.data.name});
+        }
+      }
+      queueMicrotask(() => this.onmessage?.({data:JSON.stringify({id,jsonrpc:'2.0',result})}));
+    }
+    close() {this.readyState = 3;}
+  }
+  window.WebSocket = Socket;
+  const el = selector => document.querySelector(selector);
+  async function wait(fn, message) {
+    for (let i = 0; i < 250; i++) {
+      const value = fn(); if (value) return value;
+      await new Promise(resolve => setTimeout(resolve, 15));
+    }
+    throw Error('Timed out: ' + message);
+  }
+  const click = async selector => (await wait(() => el(selector), selector)).click();
+  const text = (selector, value) => wait(() => el(selector)?.textContent.includes(value), value);
+  function fill(selector, value) {
+    const field = el(selector);
+    const select = field instanceof HTMLSelectElement;
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field),'value').set.call(field,value);
+    field.dispatchEvent(new Event(select ? 'change' : 'input',{bubbles:true}));
+  }
+  function assert(value, message) { if (!value) throw Error(message); }
+  try {
+    history.replaceState(null,'','/nodes/user');
+    await import('../src/panel/main.tsx');
+    await click('#lifecycle-start');
+    await text('#node-status','Running');
+    const initial = location.pathname;
+    await click('[aria-label="Expand guide"]');
+    assert(location.pathname === initial && !el('.action-column'), 'expanding a document navigated');
+    for (const type of ['method','event','cli','document']) {
+      assert(el('#feature-panel [role=img][aria-label="' + type + '"]'), type + ' icon missing');
+    }
+    await text('#feature-panel [data-action="methods/guide.run"]','Run query');
+    await click('[data-action="methods/guide.run"]');
+    await text('#feature-doc','Run query manual');
+    assert(el('[aria-label="Expand guide.run"]'), 'opening a method expanded its children');
+    fill('#arguments','{"text":"hello"}');
+    await click('.breadcrumbs button:nth-of-type(2)');
+    await wait(() => el('#workspace[data-pane=node]'), 'node breadcrumb');
+    assert(location.pathname.endsWith('/methods/guide.run') && el('#arguments').value.includes('hello'), 'mobile route lost form');
+    await click('[aria-label="Expand guide.run"]');
+    await click('[data-action="methods/guide.run.example"]');
+    await text('#feature-doc','Example request manual');
+    assert(!el('#method-call'), 'document has call form');
+    await click('[data-action="methods/guide.changed"]');
+    await text('#feature-doc','Publication manual');
+    assert(!el('#method-call'), 'event has call form');
+    await click('[data-action="methods/guide.shell"]');
+    await text('#feature-doc','Launch shell manual');
+    await wait(() => el('#start-terminal'), 'CLI launcher');
+    assert(el('#feature-schema').textContent.includes('additionalProperties'), 'CLI schema missing');
+    await click('[data-node=future]');
+    await text('#node-id','future');
+    await click('[aria-label="Expand $.lifecycle"]');
+    assert(!el('#lifecycle-start') && !calls.some(call => call.node === 'future'), 'unknown version ran custom logic');
+    await click('[data-action="methods/%24.lifecycle.start"]');
+    await text('#feature-doc','Start node manual');
+    assert(el('#method-call'), 'unknown version missing generic form');
+    for (const mode of ['default','folder','empty','unrestricted']) {
+      await click('[data-node=team]');
+      await text('#node-id','team');
+      await click('[data-action="create/team"]');
+      await wait(() => el('#create-node'), 'create form');
+      fill('#create-name', mode);
+      await click('#create-node details summary');
+      assert(el('#create-permissions').readOnly && el('#create-permissions').value.includes('./**'), 'default preview missing');
+      if (mode === 'folder') fill('[name=teamFolder]','/data/team');
+      if (mode === 'empty') { fill('[name=permissionMode]','custom'); await wait(() => !el('#create-permissions').readOnly, 'edit rules'); fill('#create-permissions','[]'); }
+      if (mode === 'unrestricted') await click('#create-node details button');
+      await click('#create-node [type=submit]');
+      await text('#node-name',mode);
+      const {node, data} = calls.filter(call => call.method === '$.children.createTeam').at(-1);
+      assert(node === 'team' && data.name === mode, 'delegated TEAM creation targeted wrong parent');
+      if (mode === 'default') assert(!Object.hasOwn(data,'permissions'), 'omission changed');
+      if (mode === 'folder') assert(data.permissions.length === 3 && data.permissions[2].write === '/data/team' && data.permissions[1].methods.length === 4, 'folder rules changed');
+      if (mode === 'empty') assert(JSON.stringify(data.permissions) === '[]', 'empty array changed');
+      if (mode === 'unrestricted') assert(data.permissions === null, 'null changed');
+    }
+    el('output').textContent = 'pass';
+  } catch (error) { el('output').textContent = error.stack; }
+  finally { await nativeFetch('/test-finished'); }
+</script>

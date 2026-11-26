@@ -45,10 +45,10 @@ export function TerminalProvider({children, nodes, shellVisible, actionVisible, 
   )}</AttachTerminal.Provider>;
 }
 
-export function TerminalSlot({node, method, schema, description, doc}: Partial<CliAction>) {
+export function TerminalSlot({node, method, schema}: Partial<CliAction>) {
   const outlet = useRef<HTMLDivElement>(null);
   const attach = useContext(AttachTerminal)!;
-  useLayoutEffect(() => attach(outlet.current!, node && method ? {node, method, schema, description, doc} : undefined),
-    [attach, node, method, schema, description, doc]);
+  useLayoutEffect(() => attach(outlet.current!, node && method ? {node, method, schema} : undefined),
+    [attach, node, method, schema]);
   return <div className="terminal-outlet" ref={outlet}/>;
 }

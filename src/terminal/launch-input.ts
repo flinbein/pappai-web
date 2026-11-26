@@ -11,8 +11,6 @@ export interface CliAction {
   node: string;
   method: string;
   schema?: unknown;
-  description?: string;
-  doc?: string;
 }
 export type TerminalStart = {argv: string[]; env: Record<string, string>} | {cli: {node: string; method: string; input: CliInput}};
 

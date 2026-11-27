@@ -7,7 +7,7 @@ import {TabCarousel} from './carousel';
 import {keyboardInset} from './viewport';
 import {rememberTheme, savedTheme, themeStyle, type ThemeName} from './themes';
 import {LaunchForm} from './launch-form';
-import {activeTerminalPort} from '../panel/shared-client';
+import {activeTerminalPort, legacyTerminalWorkerId} from '../panel/shared-client';
 import {useEntryState} from '../panel/entry-state';
 import type {TerminalEntry, TerminalEvent, TerminalRequest, TerminalState} from './protocol';
 import type {DirectoryNode} from '../panel/api';
@@ -76,8 +76,7 @@ interface Props {
 
 export default function TerminalTabs({nodes, action, entryKey, visible, canChooseSandbox, defaultSandbox, onOnlineChange}: Props) {
   const port = activeTerminalPort();
-  // A page-local connection or an older shared worker can restore tabs only
-  // within this document. Neither supplies a registry identity across reloads.
+  // Direct WebSocket terminals live only within this document.
   const [pageId] = useState(() => crypto.getRandomValues(new Uint32Array(4)).join('-'));
   const [worker, setWorker] = useState(port ? undefined : pageId);
   const [entry, patchEntry] = useEntryState();
@@ -249,7 +248,10 @@ export default function TerminalTabs({nodes, action, entryKey, visible, canChoos
           setFormVersion(value => value + 1);
         }
       } else if (event.type === 'terminal.registry') {
-        setWorker(event.worker ?? pageId);
+        if (event.worker) setWorker(event.worker);
+        else if (port && !worker) {
+          void legacyTerminalWorkerId(port).then(id => setWorker(id ?? pageId));
+        }
         const incoming = event.entries.map((entry: TerminalEntry) => ({
           ...entry,group:entry.cli ? groupId(entry.cli) : undefined,
         }));

@@ -9,6 +9,13 @@ type Listener = {
 let terminalPort: MessagePort | undefined;
 export const activeTerminalPort = () => terminalPort;
 
+// Older workers request this page's unique document lock. Its pending
+// clientId identifies the live worker across reloads and browser tabs.
+const legacyWorkerLookup = new WeakMap<MessagePort, () => Promise<string | undefined>>();
+export function legacyTerminalWorkerId(port: MessagePort) {
+  return legacyWorkerLookup.get(port)?.() ?? Promise.resolve(undefined);
+}
+
 export class SharedPanelConnection implements Pick<PanelConnection, 'rpc' | 'subscribe' | 'stop'> {
   private worker: SharedWorker;
   private port: MessagePort;
@@ -53,6 +60,17 @@ export class SharedPanelConnection implements Pick<PanelConnection, 'rpc' | 'sub
     this.port.start();
     if (navigator.locks) {
       const name = 'pappai-page-' + crypto.randomUUID();
+      let identity: Promise<string | undefined> | undefined;
+      const lookup = async () => {
+        // The first registry can arrive before the worker queues its lock.
+        for (let attempt = 0; attempt < 20 && !this.stopped; attempt++) {
+          const locks = await navigator.locks.query();
+          const id = locks.pending?.find(lock => lock.name === name)?.clientId;
+          if (id) return 'client:' + id;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      };
+      legacyWorkerLookup.set(this.port, () => identity ??= lookup().catch(() => undefined));
       // The browser releases this lock even when the renderer exits without pagehide.
       void navigator.locks.request(name, () => {
         if (this.stopped) return;
